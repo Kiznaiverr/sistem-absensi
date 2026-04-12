@@ -3,15 +3,20 @@
   "version": "1.0.0",
   "description": "RFID-based attendance system for Madrasah",
   "type": "module",
-  "main": "dist/backend/app.js",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:server\"",
-    "dev:vite": "vite",
-    "dev:server": "tsx watch src/backend/app.ts",
-    "build": "vite build && tsc --noEmit",
-    "preview": "vite preview",
-    "start": "node dist/backend/app.js",
-    "type-check": "tsc --noEmit"
+    "dev": "concurrently \"pnpm dev:backend\" \"pnpm dev:frontend\"",
+    "dev:backend": "pnpm -F @absensi/backend run dev",
+    "dev:frontend": "pnpm -F @absensi/frontend run dev",
+    "build": "pnpm run build:frontend && pnpm run build:backend && pnpm run copy:frontend",
+    "build:frontend": "pnpm -F @absensi/frontend run build",
+    "build:backend": "pnpm -F @absensi/backend run build",
+    "copy:frontend": "cpy \"packages/frontend/dist/**/*\" \"packages/backend/public\"",
+    "start": "pnpm -F @absensi/backend run start",
+    "type-check": "pnpm -r run type-check"
   },
   "keywords": [
     "rfid",
@@ -20,23 +25,9 @@
   ],
   "author": "",
   "license": "MIT",
-  "dependencies": {
-    "@supabase/supabase-js": "^2.38.0",
-    "date-fns": "^2.30.0",
-    "date-fns-tz": "^2.0.0",
-    "dotenv": "^16.3.1",
-    "exceljs": "^4.4.0",
-    "express": "^4.18.2"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@types/express": "^4.17.20",
-    "@types/node": "^20.8.0",
-    "autoprefixer": "^10.4.16",
     "concurrently": "^8.2.1",
-    "postcss": "^8.4.31",
-    "tailwindcss": "^3.3.5",
-    "tsx": "^4.1.0",
-    "typescript": "^5.2.2",
-    "vite": "^5.0.0"
+    "cpy-cli": "^5.0.0"
   }
 }
