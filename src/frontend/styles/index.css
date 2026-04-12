@@ -1,0 +1,316 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Smooth transitions */
+* {
+  @apply transition-colors duration-200;
+}
+
+html {
+  font-feature-settings:
+    "rlig" 1,
+    "calt" 1;
+  font-language-override: indonesian;
+}
+
+body {
+  @apply font-sans text-gray-900 bg-cream-100;
+}
+
+/* ============================================
+   LAYOUT & CONTAINERS
+   ============================================ */
+
+.app-container {
+  @apply min-h-screen bg-gradient-to-br from-cream-100 to-cream-50;
+}
+
+.app-wrapper {
+  @apply container mx-auto px-4 py-4;
+}
+
+/* ============================================
+   CARDS
+   ============================================ */
+
+.card {
+  @apply bg-white rounded-lg shadow-md p-6 border border-cream-200/50;
+}
+
+.card-lg {
+  @apply bg-white rounded-lg shadow-lg p-8 border border-cream-200/50;
+}
+
+.card-hover {
+  @apply card hover:shadow-lg transition-shadow duration-300;
+}
+
+/* ============================================
+   BUTTONS
+   ============================================ */
+
+.btn {
+  @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 cursor-pointer;
+}
+
+.btn-primary {
+  @apply btn bg-peach-300 text-white hover:bg-peach-400 active:scale-95;
+}
+
+.btn-primary-sm {
+  @apply btn bg-peach-300 text-white hover:bg-peach-400 px-3 py-1 text-sm;
+}
+
+.btn-secondary {
+  @apply btn bg-cream-200 text-gray-900 hover:bg-cream-300 active:scale-95;
+}
+
+.btn-success {
+  @apply btn bg-mint-300 text-white hover:bg-mint-400 active:scale-95;
+}
+
+.btn-danger {
+  @apply btn bg-red-500 text-white hover:bg-red-600 active:scale-95;
+}
+
+/* ============================================
+   INPUTS & FORMS
+   ============================================ */
+
+.input-field {
+  @apply w-full px-4 py-2 border border-cream-300 rounded-lg 
+         focus:outline-none focus:ring-2 focus:ring-peach-300 focus:border-transparent
+         bg-white text-gray-900 placeholder-gray-400;
+}
+
+.input-field:disabled {
+  @apply bg-cream-100 text-gray-500 cursor-not-allowed;
+}
+
+/* ============================================
+   BADGES & STATUS
+   ============================================ */
+
+.badge {
+  @apply inline-block px-3 py-1 rounded-full text-sm font-medium;
+}
+
+.badge-success {
+  @apply badge bg-mint-100 text-mint-700;
+}
+
+.badge-error {
+  @apply badge bg-red-100 text-red-700;
+}
+
+.badge-warning {
+  @apply badge bg-peach-100 text-peach-700;
+}
+
+.badge-info {
+  @apply badge bg-blue-100 text-blue-700;
+}
+
+.badge-siang {
+  @apply badge bg-peach-100 text-peach-700;
+}
+
+.badge-malam {
+  @apply badge bg-purple-100 text-purple-700;
+}
+
+/* Header Badges (larger) */
+.badge-siang,
+.badge-malam,
+.badge-info {
+  @apply text-sm px-3 py-1.5 font-semibold;
+}
+
+/* ============================================
+   NOTIFICATIONS/TOAST
+   ============================================ */
+
+/* Inline Notifications (inside form) */
+.notification-inline {
+  @apply p-6 rounded-lg font-medium shadow-md animate-slideUp
+         text-center text-base w-full;
+}
+
+.notification-inline-success {
+  @apply notification-inline bg-mint-100 text-mint-700 border-2 border-mint-400;
+}
+
+.notification-inline-error {
+  @apply notification-inline bg-red-100 text-red-700 border-2 border-red-400;
+}
+
+.notification-inline-info {
+  @apply notification-inline bg-blue-100 text-blue-700 border-2 border-blue-400;
+}
+
+/* Legacy Toast Notifications (if needed later) */
+.notification {
+  @apply fixed bottom-4 right-4 p-4 rounded-lg text-sm font-medium shadow-lg 
+         animate-slideUp z-50 max-w-sm;
+}
+
+.notification-success {
+  @apply notification bg-mint-100 text-mint-700;
+}
+
+.notification-error {
+  @apply notification bg-red-100 text-red-700;
+}
+
+.notification-warning {
+  @apply notification bg-peach-100 text-peach-700;
+}
+
+.notification-info {
+  @apply notification bg-blue-100 text-blue-700;
+}
+
+/* ============================================
+   STATS & METRICS
+   ============================================ */
+
+.stat-card {
+  @apply bg-white rounded-lg shadow-md p-4 text-center border border-cream-200/50
+         hover:shadow-lg transition-shadow duration-300 animate-fadeIn
+         min-h-24 flex flex-col justify-center;
+}
+
+.stat-value {
+  @apply text-3xl font-bold my-1;
+}
+
+.stat-label {
+  @apply text-xs text-gray-600 font-medium;
+}
+
+.stat-unit {
+  @apply text-xs text-gray-500 mt-2;
+}
+
+/* ============================================
+   LISTS & ITEMS
+   ============================================ */
+
+.list-item {
+  @apply flex justify-between items-center p-3 bg-cream-50 rounded-lg 
+         border border-cream-200/50 hover:bg-cream-100 transition-colors;
+}
+
+.list-item-title {
+  @apply font-medium text-gray-900;
+}
+
+.list-item-meta {
+  @apply text-xs text-gray-600;
+}
+
+/* ============================================
+   ERROR SIDEBAR
+   ============================================ */
+
+.error-sidebar {
+  @apply bg-red-50 rounded-lg border-2 border-red-200 overflow-hidden;
+}
+
+.error-header {
+  @apply flex justify-between items-center p-4 bg-red-100 cursor-pointer hover:bg-red-200 transition-colors select-none;
+}
+
+.error-toggle {
+  @apply flex items-center gap-2 text-red-700 font-semibold text-sm hover:text-red-800 bg-none border-none cursor-pointer;
+}
+
+.error-clear-btn {
+  @apply text-xs px-3 py-1 bg-red-200 text-red-700 rounded hover:bg-red-300 font-medium transition-colors;
+}
+
+.error-list {
+  @apply p-4 space-y-3 max-h-64 overflow-y-auto;
+}
+
+.error-item {
+  @apply p-3 bg-white rounded border-l-4 border-red-400;
+}
+
+.error-name {
+  @apply font-medium text-gray-900 text-sm;
+}
+
+.error-msg {
+  @apply text-red-600 text-sm mt-1;
+}
+
+.error-shift {
+  @apply text-xs text-gray-600 mt-1 italic;
+}
+
+.error-code {
+  @apply text-xs text-gray-500 mt-1;
+}
+
+/* ============================================
+   LISTS & ITEMS
+   ============================================ */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.animate-fade-in {
+  @apply animate-fadeIn;
+}
+
+.animate-slide-up {
+  @apply animate-slideUp;
+}
+
+/* ============================================
+   UTILITIES
+   ============================================ */
+
+.text-muted {
+  @apply text-gray-600;
+}
+
+.text-subtle {
+  @apply text-gray-500 text-sm;
+}
+
+.border-muted {
+  @apply border-cream-300;
+}
+
+.badge-info {
+  @apply inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium;
+}
