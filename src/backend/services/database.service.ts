@@ -68,36 +68,6 @@ export class DatabaseService {
   }
 
   /**
-   * Check if santri already checked in today for specific shift
-   */
-  static async hasCheckedInToday(
-    santriId: string,
-    date: string,
-    shift: Shift,
-  ): Promise<boolean> {
-    try {
-      const { data, error } = await supabaseClient
-        .from("attendance_logs")
-        .select("id")
-        .eq("santri_id", santriId)
-        .eq("date", date)
-        .eq("shift", shift)
-        .single();
-
-      if (error && error.code !== "PGRST116") throw error;
-      return data !== null;
-    } catch (error) {
-      logger.error("Failed to check in status", {
-        santriId,
-        date,
-        shift,
-        error,
-      });
-      throw error;
-    }
-  }
-
-  /**
    * Record attendance
    */
   static async recordAttendance(

@@ -72,8 +72,6 @@ export class ApiService {
     siang_count: number;
     malam_count: number;
     total_count: number;
-    siang_santri: string[];
-    malam_santri: string[];
   }> {
     const response = await this.request<ApiResponse>(
       "GET",

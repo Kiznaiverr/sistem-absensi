@@ -35,17 +35,6 @@ export const env = {
   SHIFT_SIANG_END: getEnv("SHIFT_SIANG_END", "16:00"),
   SHIFT_MALAM_START: getEnv("SHIFT_MALAM_START", "18:00"),
   SHIFT_MALAM_END: getEnv("SHIFT_MALAM_END", "21:00"),
-
-  // Batch Processing
-  BATCH_SUBMIT_INTERVAL: parseInt(getEnv("BATCH_SUBMIT_INTERVAL", "3000")), // 3 seconds
-  BATCH_DUPLICATE_CHECK_WINDOW: parseInt(
-    getEnv("BATCH_DUPLICATE_CHECK_WINDOW", "5000"),
-  ), // 5 seconds
-
-  // Archive
-  ARCHIVE_DAYS_THRESHOLD: parseInt(getEnv("ARCHIVE_DAYS_THRESHOLD", "90")),
-  ARCHIVE_CLOUD_BUCKET: getEnv("ARCHIVE_CLOUD_BUCKET", "attendance-archive"),
-  ARCHIVE_JOB_CRON: getEnv("ARCHIVE_JOB_CRON", "0 0 * * *"), // Daily at midnight
 } as const;
 
 export default env;

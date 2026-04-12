@@ -77,13 +77,6 @@ export class CacheService {
   }
 
   /**
-   * Get all keys
-   */
-  keys(): string[] {
-    return Array.from(this.cache.keys());
-  }
-
-  /**
    * Remove all expired entries
    */
   private cleanup(): void {

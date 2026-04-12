@@ -381,8 +381,6 @@ export class AttendanceService {
     siang_count: number;
     malam_count: number;
     total_count: number;
-    siang_santri: string[];
-    malam_santri: string[];
   }> {
     const today = getCurrentDateString();
     const attendanceToday = cacheService.get<CachedAttendanceToday>(
@@ -395,8 +393,6 @@ export class AttendanceService {
         siang_count: 0,
         malam_count: 0,
         total_count: 0,
-        siang_santri: [],
-        malam_santri: [],
       };
     }
 
@@ -405,52 +401,6 @@ export class AttendanceService {
       siang_count: attendanceToday.siang.size,
       malam_count: attendanceToday.malam.size,
       total_count: attendanceToday.siang.size + attendanceToday.malam.size,
-      siang_santri: Array.from(attendanceToday.siang.keys()),
-      malam_santri: Array.from(attendanceToday.malam.keys()),
     };
-  }
-
-  /**
-   * Refresh today's attendance from database
-   * Call this at midnight or when cache expires
-   */
-  static async refreshTodayCache(): Promise<void> {
-    try {
-      const today = getCurrentDateString();
-      const logs = await DatabaseService.getAttendanceByDate(today);
-
-      const attendanceToday: CachedAttendanceToday = {
-        date: today,
-        siang: new Map(),
-        malam: new Map(),
-      };
-
-      for (const log of logs) {
-        const santri = log.santri as any;
-        const rfidId = santri?.rfid_id;
-        if (rfidId) {
-          const map =
-            log.shift === "siang"
-              ? attendanceToday.siang
-              : attendanceToday.malam;
-          map.set(rfidId, new Date(log.checked_in_at).getTime());
-        }
-      }
-
-      cacheService.set(
-        this.CACHE_KEY_ATTENDANCE_TODAY,
-        attendanceToday,
-        env.CACHE_TTL_ATTENDANCE,
-      );
-
-      logger.info("Today attendance cache refreshed", {
-        date: today,
-        siang_count: attendanceToday.siang.size,
-        malam_count: attendanceToday.malam.size,
-      });
-    } catch (error) {
-      logger.error("Failed to refresh today cache", error);
-      throw error;
-    }
   }
 }
