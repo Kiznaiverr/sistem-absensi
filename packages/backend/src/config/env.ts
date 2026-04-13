@@ -20,11 +20,11 @@ export const env = {
   SUPABASE_SECRET_KEY: getEnv("SUPABASE_SECRET_KEY"),
 
   // JWT
-  JWT_SECRET: getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
-  ACCESS_TOKEN_EXPIRES_IN: parseInt(getEnv("ACCESS_TOKEN_EXPIRES_IN", "43200")), // 12 hours
+  JWT_SECRET: getEnv("JWT_SECRET"),
+  ACCESS_TOKEN_EXPIRES_IN: parseInt(getEnv("ACCESS_TOKEN_EXPIRES_IN", "43200")),
   REFRESH_TOKEN_EXPIRES_IN: parseInt(
     getEnv("REFRESH_TOKEN_EXPIRES_IN", "604800"),
-  ), // 7 days
+  ),
 
   // CORS
   FRONTEND_URL: getEnv("FRONTEND_URL", "http://localhost:3000"),
@@ -34,8 +34,8 @@ export const env = {
 
   // Cache
   CACHE_ENABLED: getEnv("CACHE_ENABLED", "true") === "true",
-  CACHE_TTL_SANTRI: parseInt(getEnv("CACHE_TTL_SANTRI", "43200")), // 12 hours
-  CACHE_TTL_ATTENDANCE: parseInt(getEnv("CACHE_TTL_ATTENDANCE", "300")), // 5 minutes
+  CACHE_TTL_SANTRI: parseInt(getEnv("CACHE_TTL_SANTRI", "43200")),
+  CACHE_TTL_ATTENDANCE: parseInt(getEnv("CACHE_TTL_ATTENDANCE", "300")),
 
   // Attendance
   SHIFT_SIANG_START: getEnv("SHIFT_SIANG_START", "13:00"),

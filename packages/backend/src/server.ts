@@ -29,16 +29,12 @@ async function startServer() {
     logger.info("Application initialization complete");
 
     app.listen(PORT, HOST, () => {
-      console.log(`
-╔════════════════════════════════════════════════╗
-║       Absensi System - RFID Attendance         ║
-║────────────────────────────────────────────────║
-║   Backend: http://${HOST}:${PORT}
-║   Environment: ${env.NODE_ENV.toUpperCase()}
-║   Cache: ${env.CACHE_ENABLED ? "ENABLED" : "DISABLED"}
-║   Timezone: ${env.TIMEZONE}
-╚════════════════════════════════════════════════╝
-      `);
+      logger.info("Server started successfully", {
+        backend: `http://${HOST}:${PORT}`,
+        environment: env.NODE_ENV.toUpperCase(),
+        cache: env.CACHE_ENABLED ? "ENABLED" : "DISABLED",
+        timezone: env.TIMEZONE,
+      });
     });
   } catch (error) {
     logger.error("Failed to start server", error);
