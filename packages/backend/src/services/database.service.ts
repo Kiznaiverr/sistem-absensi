@@ -259,6 +259,7 @@ export class DatabaseService {
 
   /**
    * Get data for export: classes, santri, and attendance records for a date range
+   * Queries BOTH active and archive tables to ensure complete data
    */
   static async getExportData(
     month: number,
@@ -270,6 +271,7 @@ export class DatabaseService {
     classes: any[];
     santri: any[];
     attendance_logs: any[];
+    source: "active" | "archive" | "both";
   }> {
     try {
       // Get classes
@@ -317,35 +319,106 @@ export class DatabaseService {
 
       // Get attendance logs for the month
       let attendanceData: any[] = [];
+      let dataSource: "active" | "archive" | "both" = "active";
 
       if (classesData && classesData.length > 0) {
         const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
         const endDate = new Date(year, month, 0).toISOString().split("T")[0]; // Last day of month
+        const classIds = (classesData as any[]).map((c) => c.id);
 
-        let attendanceQuery = supabaseClient
+        // Query from ACTIVE table
+        let activeQuery = supabaseClient
           .from("attendance_logs")
           .select("*, santri(*), classes(*)")
           .gte("date", startDate)
           .lte("date", endDate)
           .eq("shift", shift);
 
-        // Use actual class IDs from classesData for attendance query
-        const classIds = (classesData as any[]).map((c) => c.id);
         if (classIds.length === 1) {
-          attendanceQuery = attendanceQuery.eq("class_id", classIds[0]);
+          activeQuery = activeQuery.eq("class_id", classIds[0]);
         } else {
-          attendanceQuery = attendanceQuery.in("class_id", classIds);
+          activeQuery = activeQuery.in("class_id", classIds);
         }
 
-        const { data, error: attendanceError } = await attendanceQuery;
-        if (attendanceError) throw attendanceError;
-        attendanceData = data || [];
+        const { data: activeData, error: activeError } = await activeQuery;
+        if (activeError) throw activeError;
+
+        // Query from ARCHIVE table
+        let archiveQuery = supabaseClient
+          .from("attendance_logs_archive")
+          .select("*")
+          .gte("date", startDate)
+          .lte("date", endDate)
+          .eq("shift", shift)
+          .in("class_id", classIds);
+
+        const { data: archiveData, error: archiveError } = await archiveQuery;
+        if (archiveError) throw archiveError;
+
+        // Normalize archive data to match active format
+        const normalizedArchiveData = (archiveData || []).map((record: any) => ({
+          id: record.id,
+          santri_id: record.santri_id,
+          class_id: record.class_id,
+          date: record.date,
+          shift: record.shift,
+          checked_in_at: record.checked_in_at,
+          status: record.status,
+          notes: record.notes,
+          created_at: record.original_created_at,
+          santri: {
+            id: record.santri_id,
+            name: record.santri_name,
+            rfid_id: record.santri_rfid_id,
+            class_id: record.class_id,
+          },
+          classes: {
+            id: record.class_id,
+            name: record.class_name,
+            school_type: record.school_type,
+            grade: record.grade,
+          },
+        }));
+
+        // Combine both datasets, deduplicating by id
+        const dataMap = new Map();
+
+        // Add active data first
+        (activeData || []).forEach((record: any) => {
+          dataMap.set(record.id, record);
+        });
+
+        // Add archive data (won't overwrite if same id exists in active)
+        normalizedArchiveData.forEach((record: any) => {
+          if (!dataMap.has(record.id)) {
+            dataMap.set(record.id, record);
+          }
+        });
+
+        attendanceData = Array.from(dataMap.values());
+
+        // Determine data source
+        if (activeData && activeData.length > 0 && (!archiveData || archiveData.length === 0)) {
+          dataSource = "active";
+        } else if ((!activeData || activeData.length === 0) && archiveData && archiveData.length > 0) {
+          dataSource = "archive";
+        } else if (activeData && activeData.length > 0 && archiveData && archiveData.length > 0) {
+          dataSource = "both";
+        }
       }
+
+      logger.info("Export data fetched", {
+        month,
+        year,
+        total_records: attendanceData.length,
+        source: dataSource,
+      });
 
       return {
         classes: classesData || [],
         santri: santriData || [],
-        attendance_logs: attendanceData || [],
+        attendance_logs: attendanceData,
+        source: dataSource,
       };
     } catch (error) {
       logger.error("Failed to get export data", {
@@ -359,4 +432,59 @@ export class DatabaseService {
       throw error;
     }
   }
+
+  /**
+   * Count active records in attendance_logs table
+   */
+  static async countActiveRecords(): Promise<number> {
+    try {
+      const { count, error } = await supabaseClient
+        .from("attendance_logs")
+        .select("id", { count: "exact", head: true });
+
+      if (error) throw error;
+      return count || 0;
+    } catch (error) {
+      logger.error("Failed to count active records", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Count archived records in attendance_logs_archive table
+   */
+  static async countArchivedRecords(): Promise<number> {
+    try {
+      const { count, error } = await supabaseClient
+        .from("attendance_logs_archive")
+        .select("id", { count: "exact", head: true });
+
+      if (error) throw error;
+      return count || 0;
+    } catch (error) {
+      logger.error("Failed to count archived records", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get oldest record in active table
+   */
+  static async getOldestActiveRecord(): Promise<string | null> {
+    try {
+      const { data, error } = await supabaseClient
+        .from("attendance_logs")
+        .select("date")
+        .order("date", { ascending: true })
+        .limit(1)
+        .single();
+
+      if (error && error.code !== "PGRST116") throw error;
+      return data?.date || null;
+    } catch (error) {
+      logger.error("Failed to get oldest active record", error);
+      return null;
+    }
+  }
 }
+

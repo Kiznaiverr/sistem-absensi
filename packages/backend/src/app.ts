@@ -6,6 +6,7 @@ import { createLogger, initializeErrorLogging } from "./utils/logger.js";
 import { AttendanceService } from "./services/attendance.service.js";
 import attendanceRoutes from "./routes/attendance.js";
 import classesRoutes from "./routes/classes.js";
+import adminRoutes from "./routes/admin.js";
 
 const logger = createLogger("App");
 
@@ -57,6 +58,7 @@ app.get("/health", (_req: Request, res: Response) => {
 // API Routes
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/classes", classesRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Serve static files dari Vite build (in production)
 const publicDir = join(__dirname, "../public");

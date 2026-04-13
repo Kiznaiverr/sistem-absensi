@@ -25,7 +25,6 @@
   ],
   "author": "",
   "license": "MIT",
-  "dependencies": {},
   "devDependencies": {
     "concurrently": "^8.2.1",
     "cpy-cli": "^5.0.0"

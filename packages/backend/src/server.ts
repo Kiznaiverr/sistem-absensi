@@ -2,6 +2,7 @@ import app from "./app.js";
 import env from "./config/env.js";
 import { createLogger, initializeErrorLogging } from "./utils/logger.js";
 import { AttendanceService } from "./services/attendance.service.js";
+import { scheduleArchiveJob } from "./jobs/archive.job.js";
 
 const logger = createLogger("Server");
 
@@ -21,6 +22,9 @@ async function startServer() {
     if (env.CACHE_ENABLED) {
       await AttendanceService.initializeCache();
     }
+
+    // Initialize archive job scheduler
+    scheduleArchiveJob();
 
     logger.info("Application initialization complete");
 
