@@ -6,7 +6,7 @@
 import { TimezoneService } from "../../services/timezone";
 
 export class HeaderComponent {
-  private updateInterval: NodeJS.Timeout | null = null;
+  private updateInterval: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Initialize header with real-time updates

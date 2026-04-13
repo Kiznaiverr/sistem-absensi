@@ -29,7 +29,7 @@ export class RFIDFormComponent {
     timestamp: number;
   }> = [];
   private rfidBuffer: string = "";
-  private batchTimeout: NodeJS.Timeout | null = null;
+  private batchTimeout: ReturnType<typeof setTimeout> | null = null;
   private selectedShift: "siang" | "malam" | null = null;
   private onSuccess?: (record: AttendanceCheckIn) => void;
   private onError?: (error: any) => void;
