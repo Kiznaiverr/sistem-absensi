@@ -11,6 +11,18 @@ CREATE TABLE IF NOT EXISTS classes (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Admins (Auth table)
+CREATE TABLE IF NOT EXISTS admins (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  username VARCHAR(100) UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  last_login_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Santri (Students)
 CREATE TABLE IF NOT EXISTS santri (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -88,6 +100,10 @@ CREATE TABLE IF NOT EXISTS archive_operations (
 -- Indexes for performance
 CREATE INDEX idx_classes_school_type ON classes(school_type);
 CREATE INDEX idx_classes_grade ON classes(grade);
+
+CREATE INDEX idx_admins_email ON admins(email);
+CREATE INDEX idx_admins_username ON admins(username);
+CREATE INDEX idx_admins_is_active ON admins(is_active);
 
 CREATE INDEX idx_santri_rfid_id ON santri(rfid_id);
 CREATE INDEX idx_santri_class_id ON santri(class_id);

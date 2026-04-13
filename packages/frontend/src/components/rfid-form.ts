@@ -351,7 +351,7 @@ export class RFIDFormComponent {
 
       // Accumulate errors
       if (response.errors.length > 0) {
-        const errors: BatchError[] = response.errors.map((e) => ({
+        const errors: BatchError[] = response.errors.map((e: any) => ({
           rfid_id: e.rfid_id,
           error_code: e.error_code,
           error: e.error,

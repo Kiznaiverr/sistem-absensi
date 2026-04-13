@@ -6,7 +6,8 @@
 import type {
   BatchAttendanceRequest,
   BatchAttendanceResponse,
-} from "../../shared/types";
+} from "@absensi/shared/types";
+import { AuthService } from "./auth";
 
 const API_BASE_URL = "/api";
 
@@ -19,7 +20,7 @@ interface ApiResponse<T = any> {
 
 export class ApiService {
   /**
-   * Make HTTP request
+   * Make HTTP request with authentication
    */
   private static async request<T>(
     method: "GET" | "POST" | "PUT" | "DELETE",
@@ -38,14 +39,25 @@ export class ApiService {
       options.body = JSON.stringify(body);
     }
 
-    const response = await fetch(url, options);
+    try {
+      const response = await AuthService.fetch(url, options);
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || "API Error");
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "API Error");
+      }
+
+      return response.json();
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "No authentication token"
+      ) {
+        // Token missing, redirect to login
+        window.location.href = "/";
+      }
+      throw error;
     }
-
-    return response.json();
   }
 
   /**
@@ -130,14 +142,24 @@ export class ApiService {
     if (filters?.school_type) params.append("school_type", filters.school_type);
     if (filters?.class_id) params.append("class_id", filters.class_id);
 
-    const response = await fetch(
-      `${API_BASE_URL}/attendance/export?${params.toString()}`,
-    );
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || `HTTP ${response.status}`);
+    const url = `${API_BASE_URL}/attendance/export?${params.toString()}`;
+
+    try {
+      const response = await AuthService.fetch(url);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || `HTTP ${response.status}`);
+      }
+      return response.json();
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "No authentication token"
+      ) {
+        window.location.href = "/";
+      }
+      throw error;
     }
-    return response.json();
   }
 
   /**

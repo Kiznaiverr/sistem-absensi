@@ -7,6 +7,8 @@ import { AttendanceService } from "./services/attendance.service.js";
 import attendanceRoutes from "./routes/attendance.js";
 import classesRoutes from "./routes/classes.js";
 import adminRoutes from "./routes/admin.js";
+import authRoutes from "./routes/auth.js";
+import { validateToken } from "./middleware/auth.middleware.js";
 
 const logger = createLogger("App");
 
@@ -25,7 +27,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.header("Access-Control-Allow-Origin", env.FRONTEND_URL);
   res.header(
     "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization",
   );
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
 
@@ -55,10 +57,13 @@ app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// API Routes
-app.use("/api/attendance", attendanceRoutes);
-app.use("/api/classes", classesRoutes);
-app.use("/api/admin", adminRoutes);
+// Auth Routes (Public)
+app.use("/api/auth", authRoutes);
+
+// Protected API Routes
+app.use("/api/attendance", validateToken, attendanceRoutes);
+app.use("/api/classes", validateToken, classesRoutes);
+app.use("/api/admin", validateToken, adminRoutes);
 
 // Serve static files dari Vite build (in production)
 const publicDir = join(__dirname, "../public");

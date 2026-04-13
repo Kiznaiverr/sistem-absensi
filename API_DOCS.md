@@ -17,6 +17,8 @@ API ini menyediakan endpoint untuk:
 
 **Response Format:** Semua response menggunakan JSON dengan struktur konsisten
 
+**Authentication:** Semua endpoint kecuali `/health` dan `/api/auth/*` memerlukan JWT token dalam header `Authorization: Bearer <token>`
+
 ---
 
 ## Error Response Format
@@ -35,6 +37,21 @@ Semua error response mengikuti format berikut:
 
 ## Error Codes
 
+### Authentication Errors
+
+| Code                     | Pesan                                  | Penjelasan                                  |
+| ------------------------ | -------------------------------------- | ------------------------------------------- |
+| `INVALID_LOGIN_REQUEST`  | Username/email dan password diperlukan | Data login tidak lengkap                    |
+| `INVALID_CREDENTIALS`    | Username/email atau password salah     | Login gagal - kredensial tidak cocok        |
+| `ADMIN_INACTIVE`         | Admin account tidak aktif              | Akun admin sudah di-disable                 |
+| `MISSING_TOKEN`          | Missing atau invalid authorization     | Header Authorization tidak ada/format salah |
+| `INVALID_TOKEN`          | Invalid atau expired token             | Token sudah expired atau signature invalid  |
+| `TOKEN_VALIDATION_ERROR` | Token validation gagal                 | Error saat verify token                     |
+| `MISSING_REFRESH_TOKEN`  | Refresh token diperlukan               | Refresh token tidak ada di request body     |
+| `INVALID_REFRESH_TOKEN`  | Invalid atau expired refresh token     | Refresh token sudah expired                 |
+
+### Attendance Errors
+
 | Code                    | Pesan                               | Penjelasan                                                   |
 | ----------------------- | ----------------------------------- | ------------------------------------------------------------ |
 | `RFID_NOT_FOUND`        | RFID tidak ditemukan di data santri | Kartu RFID tidak terdaftar                                   |
@@ -49,6 +66,26 @@ Semua error response mengikuti format berikut:
 
 ---
 
+## Authentication
+
+### Token Information
+
+- **Access Token:** Valid 12 jam (43200 detik, configurable via ACCESS_TOKEN_EXPIRES_IN)
+- **Refresh Token:** Valid 7 hari (604800 detik, configurable via REFRESH_TOKEN_EXPIRES_IN)
+- **Auto-Refresh:** Otomatis refresh 5 menit sebelum expiry (background)
+
+### Token Lifecycle
+
+1. User login dengan username/email + password
+2. Backend verifikasi, return access_token + refresh_token
+3. Frontend simpan tokens ke localStorage
+4. Setiap API request: tambah header `Authorization: Bearer <access_token>`
+5. Token auto-refresh 55 menit setelah login (background)
+6. Jika token expired saat request: auto-refresh dan retry
+7. Jika refresh_token juga expired: user harus login lagi
+
+---
+
 ## Endpoints
 
 ### 1. Health Check
@@ -57,7 +94,7 @@ Semua error response mengikuti format berikut:
 GET /health
 ```
 
-**Deskripsi:** Check status server
+**Deskripsi:** Check status server (tidak perlu token)
 
 **Response:**
 
@@ -76,13 +113,129 @@ curl -X GET http://localhost:5000/health
 
 ---
 
-### 2. Batch RFID Scan
+### 2. Login
+
+```
+POST /api/auth/login
+```
+
+**Deskripsi:** Autentikasi dengan username/email dan password. Tidak perlu token.
+
+**Request Body:**
+
+```json
+{
+  "username_or_email": "admin",
+  "password": "my-password-123"
+}
+```
+
+**Parameters:**
+
+- `username_or_email` (string, required): Username atau email admin
+- `password` (string, required): Password plain text (akan di-hash server-side)
+
+**Response (Success):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "admin": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "email": "admin@example.com",
+      "username": "admin",
+      "is_active": true,
+      "created_at": "2026-04-13T00:00:00.000Z"
+    },
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expires_in": 3600
+  }
+}
+```
+
+**Error Responses:**
+
+- 400: `INVALID_LOGIN_REQUEST` - Data login tidak lengkap
+- 401: `INVALID_CREDENTIALS` - Username/email atau password salah
+- 401: `ADMIN_INACTIVE` - Akun admin tidak aktif
+
+**cURL:**
+
+```bash
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username_or_email": "admin",
+    "password": "my-password-123"
+  }'
+```
+
+---
+
+### 3. Refresh Token
+
+```
+POST /api/auth/refresh
+```
+
+**Deskripsi:** Refresh access token menggunakan refresh token. Tidak perlu Authorization header.
+
+**Request Body:**
+
+```json
+{
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Parameters:**
+
+- `refresh_token` (string, required): Refresh token dari login response
+
+**Response (Success):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expires_in": 3600
+  }
+}
+```
+
+**Error Responses:**
+
+- 400: `MISSING_REFRESH_TOKEN` - Refresh token tidak ada
+- 401: `INVALID_REFRESH_TOKEN` - Refresh token expired atau invalid
+
+**cURL:**
+
+```bash
+curl -X POST http://localhost:5000/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refresh_token": "eyJhbGc..."
+  }'
+```
+
+---
+
+### 4. Batch RFID Scan
 
 ```
 POST /api/attendance/batch
 ```
 
-**Deskripsi:** Process batch RFID scans. Validasi duplikat, deteksi shift, dan record ke database.
+**Deskripsi:** Process batch RFID scans. Validasi duplikat, deteksi shift, dan record ke database. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
 
 **Request Body:**
 
@@ -141,6 +294,7 @@ POST /api/attendance/batch
 ```bash
 curl -X POST http://localhost:5000/api/attendance/batch \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
   -d '{
     "batch": [
       {"rfid_id": "RFD001001", "shift": "siang"},
@@ -152,13 +306,19 @@ curl -X POST http://localhost:5000/api/attendance/batch \
 
 ---
 
-### 3. Today Summary
+### 5. Today Summary
 
 ```
 GET /api/attendance/today
 ```
 
-**Deskripsi:** Get attendance summary untuk hari ini (siang + malam)
+**Deskripsi:** Get attendance summary untuk hari ini (siang + malam). Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
 
 **Response:**
 
@@ -178,18 +338,25 @@ GET /api/attendance/today
 **cURL:**
 
 ```bash
-curl -X GET http://localhost:5000/api/attendance/today
+curl -X GET http://localhost:5000/api/attendance/today \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 ---
 
-### 4. Monthly Attendance
+### 6. Monthly Attendance
 
 ```
 GET /api/attendance/month
 ```
 
-**Deskripsi:** Get attendance data untuk bulan tertentu dengan optional filters
+**Deskripsi:** Get attendance data untuk bulan tertentu dengan optional filters. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
 
 **Query Parameters:**
 
@@ -227,30 +394,39 @@ GET /api/attendance/month
 **cURL - All data April 2026:**
 
 ```bash
-curl -X GET "http://localhost:5000/api/attendance/month?month=3&year=2026"
+curl -X GET "http://localhost:5000/api/attendance/month?month=3&year=2026" \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **cURL - SMP only, Shift Siang:**
 
 ```bash
-curl -X GET "http://localhost:5000/api/attendance/month?school_type=SMP&shift=siang"
+curl -X GET "http://localhost:5000/api/attendance/month?school_type=SMP&shift=siang" \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **cURL - Specific class:**
 
 ```bash
-curl -X GET "http://localhost:5000/api/attendance/month?class_id=<class-uuid>"
+curl -X GET "http://localhost:5000/api/attendance/month?class_id=<class-uuid>" \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 ---
 
-### 5. Export Attendance Data (JSON)
+### 7. Export Attendance Data (JSON)
 
 ```
 GET /api/attendance/export
 ```
 
-**Deskripsi:** Export attendance data dalam format JSON matrix untuk preview atau processing lanjutan. Mengembalikan data attendance dalam format matrix (nama vertical, tanggal horizontal) untuk setiap kelas.
+**Deskripsi:** Export attendance data dalam format JSON matrix untuk preview atau processing lanjutan. Mengembalikan data attendance dalam format matrix (nama vertical, tanggal horizontal) untuk setiap kelas. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
 
 **Query Parameters:**
 
@@ -320,28 +496,32 @@ GET /api/attendance/export
 **cURL - Export April 2026 Shift Siang (All Schools, All Classes):**
 
 ```bash
-curl -X GET "http://localhost:5000/api/attendance/export?month=4&year=2026&shift=siang"
+curl -X GET "http://localhost:5000/api/attendance/export?month=4&year=2026&shift=siang" \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **cURL - Export SMP only, All Classes:**
 
 ```bash
-curl -X GET "http://localhost:5000/api/attendance/export?month=4&year=2026&shift=siang&school_type=SMP"
+curl -X GET "http://localhost:5000/api/attendance/export?month=4&year=2026&shift=siang&school_type=SMP" \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **cURL - Export All Schools, Class 2 only (SMP-2 + SMK-2):**
 
 ```bash
-curl -X GET "http://localhost:5000/api/attendance/export?month=4&year=2026&shift=siang&class_id=2"
+curl -X GET "http://localhost:5000/api/attendance/export?month=4&year=2026&shift=siang&class_id=2" \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **cURL - Export specific class:**
 
 ```bash
-curl -X GET "http://localhost:5000/api/attendance/export?month=4&year=2026&shift=siang&class_id=<class-uuid>"
+curl -X GET "http://localhost:5000/api/attendance/export?month=4&year=2026&shift=siang&class_id=<class-uuid>" \
+  -H "Authorization: Bearer <access_token>"
 ```
 
-### 5.5 Export to Excel (Frontend)
+### 7.5 Export to Excel (Frontend)
 
 **Deskripsi:** Frontend component untuk export attendance data ke file Excel (.xlsx) dengan formatting profesional.
 
@@ -366,13 +546,19 @@ curl -X GET "http://localhost:5000/api/attendance/export?month=4&year=2026&shift
 
 ---
 
-### 6. Get All Classes
+### 8. Get All Classes
 
 ```
 GET /api/classes
 ```
 
-**Deskripsi:** Get semua kelas yang tersedia. Data di-cache selama 12 jam.
+**Deskripsi:** Get semua kelas yang tersedia. Data di-cache selama 12 jam. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
 
 **Response:**
 
@@ -408,18 +594,25 @@ GET /api/classes
 **cURL:**
 
 ```bash
-curl -X GET http://localhost:5000/api/classes
+curl -X GET http://localhost:5000/api/classes \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 ---
 
-### 7. Get Santri by Class
+### 9. Get Santri by Class
 
 ```
 GET /api/classes/:classId/santri
 ```
 
-**Deskripsi:** Get semua santri dalam kelas tertentu. Data di-cache selama 12 jam.
+**Deskripsi:** Get semua santri dalam kelas tertentu. Data di-cache selama 12 jam. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
 
 **Path Parameters:**
 
@@ -454,18 +647,25 @@ GET /api/classes/:classId/santri
 **cURL:**
 
 ```bash
-curl -X GET http://localhost:5000/api/classes/uuid-smp1/santri
+curl -X GET http://localhost:5000/api/classes/uuid-smp1/santri \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 ---
 
-### 8. Reinitialize Cache (Debug)
+### 10. Reinitialize Cache (Debug)
 
 ```
 POST /api/classes/init-cache
 ```
 
-**Deskripsi:** Clear dan reinitialize cache. Endpoint ini untuk debugging saja.
+**Deskripsi:** Clear dan reinitialize cache. Endpoint ini untuk debugging saja. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
 
 **Response:**
 
@@ -484,7 +684,8 @@ POST /api/classes/init-cache
 **cURL:**
 
 ```bash
-curl -X POST http://localhost:5000/api/classes/init-cache
+curl -X POST http://localhost:5000/api/classes/init-cache \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 ---
@@ -572,92 +773,8 @@ UNIQUE CONSTRAINT: (santri_id, date, shift)
 
 ---
 
-## Rate Limiting
-
-Tidak ada rate limiting di fase ini. Akan ditambahkan di fase production.
-
----
-
-## Authentication
-
-Tidak ada authentication di fase ini. Akan ditambahkan di fase production menggunakan JWT tokens.
-
----
-
-## Example Workflow
-
-### 1. Initialize App
-
-```bash
-# Get all classes
-curl -X GET http://localhost:5000/api/classes
-
-# Get santri in SMP-1
-curl -X GET http://localhost:5000/api/classes/<class-id>/santri
-```
-
-### 2. Process RFID Scans (Batch)
-
-```bash
-# Scan 5 kartu RFID siang shift
-curl -X POST http://localhost:5000/api/attendance/batch \
-  -H "Content-Type: application/json" \
-  -d '{
-    "batch": [
-      {"rfid_id": "RFD001001"},
-      {"rfid_id": "RFD001002"},
-      {"rfid_id": "RFD002001"},
-      {"rfid_id": "RFD004003"},
-      {"rfid_id": "RFD006005"}
-    ]
-  }'
-```
-
-### 3. Check Today Summary
-
-```bash
-curl -X GET http://localhost:5000/api/attendance/today
-```
-
----
-
-## Frontend Integration
-
-Frontend services sudah tersedia di:
-
-- `src/frontend/services/api.ts` - HTTP client
-- `src/frontend/services/cache.ts` - Cache management
-- `src/frontend/services/timezone.ts` - Timezone operations
-
----
-
-## Troubleshooting
-
-### RFID Not Found
-
-- Pastikan RFID terdaftar di database santri
-- Cek format RFID_ID (harus sesuai dengan yang di database)
-
-### Already Checked
-
-- Santri sudah scan di shift yang sama hari ini
-- Unique constraint: 1 entry per santri per shift per day
-
-### Outside Hours
-
-- Pastikan waktu server sudah benar
-- Timezone: Asia/Jakarta (UTC+7)
-- Siang: 13:00-16:00, Malam: 18:00-21:00
-
-### Cache Not Updating
-
-- Manual reinitialize: `POST /api/classes/init-cache`
-- Cache auto-refresh setiap 5 menit
-
----
-
 ## Version
 
 **API Version:** 1.0.0  
-**Status:** Beta (Phase 1-5 Complete)  
-**Last Updated:** April 11, 2026
+**Status:** Beta  
+**Last Updated:** April 13, 2026

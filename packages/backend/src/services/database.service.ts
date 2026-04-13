@@ -356,29 +356,31 @@ export class DatabaseService {
         if (archiveError) throw archiveError;
 
         // Normalize archive data to match active format
-        const normalizedArchiveData = (archiveData || []).map((record: any) => ({
-          id: record.id,
-          santri_id: record.santri_id,
-          class_id: record.class_id,
-          date: record.date,
-          shift: record.shift,
-          checked_in_at: record.checked_in_at,
-          status: record.status,
-          notes: record.notes,
-          created_at: record.original_created_at,
-          santri: {
-            id: record.santri_id,
-            name: record.santri_name,
-            rfid_id: record.santri_rfid_id,
+        const normalizedArchiveData = (archiveData || []).map(
+          (record: any) => ({
+            id: record.id,
+            santri_id: record.santri_id,
             class_id: record.class_id,
-          },
-          classes: {
-            id: record.class_id,
-            name: record.class_name,
-            school_type: record.school_type,
-            grade: record.grade,
-          },
-        }));
+            date: record.date,
+            shift: record.shift,
+            checked_in_at: record.checked_in_at,
+            status: record.status,
+            notes: record.notes,
+            created_at: record.original_created_at,
+            santri: {
+              id: record.santri_id,
+              name: record.santri_name,
+              rfid_id: record.santri_rfid_id,
+              class_id: record.class_id,
+            },
+            classes: {
+              id: record.class_id,
+              name: record.class_name,
+              school_type: record.school_type,
+              grade: record.grade,
+            },
+          }),
+        );
 
         // Combine both datasets, deduplicating by id
         const dataMap = new Map();
@@ -398,11 +400,24 @@ export class DatabaseService {
         attendanceData = Array.from(dataMap.values());
 
         // Determine data source
-        if (activeData && activeData.length > 0 && (!archiveData || archiveData.length === 0)) {
+        if (
+          activeData &&
+          activeData.length > 0 &&
+          (!archiveData || archiveData.length === 0)
+        ) {
           dataSource = "active";
-        } else if ((!activeData || activeData.length === 0) && archiveData && archiveData.length > 0) {
+        } else if (
+          (!activeData || activeData.length === 0) &&
+          archiveData &&
+          archiveData.length > 0
+        ) {
           dataSource = "archive";
-        } else if (activeData && activeData.length > 0 && archiveData && archiveData.length > 0) {
+        } else if (
+          activeData &&
+          activeData.length > 0 &&
+          archiveData &&
+          archiveData.length > 0
+        ) {
           dataSource = "both";
         }
       }
@@ -486,5 +501,45 @@ export class DatabaseService {
       return null;
     }
   }
-}
 
+  /**
+   * Find admin by email or username
+   */
+  static async findAdminByEmailOrUsername(
+    emailOrUsername: string,
+  ): Promise<any | null> {
+    try {
+      const { data, error } = await supabaseClient
+        .from("admins")
+        .select("*")
+        .or(`email.eq.${emailOrUsername},username.eq.${emailOrUsername}`)
+        .single();
+
+      if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
+      return data || null;
+    } catch (error) {
+      logger.error("Failed to find admin by email/username", {
+        emailOrUsername,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Update admin last login timestamp
+   */
+  static async updateAdminLastLogin(adminId: string): Promise<void> {
+    try {
+      const { error } = await supabaseClient
+        .from("admins")
+        .update({ last_login_at: new Date().toISOString() })
+        .eq("id", adminId);
+
+      if (error) throw error;
+    } catch (error) {
+      logger.error("Failed to update admin last login", { adminId, error });
+      // Don't throw - this is not critical
+    }
+  }
+}

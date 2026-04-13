@@ -145,3 +145,48 @@ export interface SuccessResponse<T = any> {
   data: T;
   message?: string;
 }
+
+// Auth Types
+export interface Admin {
+  id: string;
+  email: string;
+  username: string;
+  is_active: boolean;
+  last_login_at?: string;
+  created_at: string;
+}
+
+export interface LoginRequest {
+  username_or_email: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  success: true;
+  data: {
+    admin: Admin;
+    access_token: string;
+    refresh_token: string;
+    expires_in: number; // seconds
+  };
+}
+
+export interface RefreshTokenRequest {
+  refresh_token: string;
+}
+
+export interface RefreshTokenResponse {
+  success: true;
+  data: {
+    access_token: string;
+    expires_in: number;
+  };
+}
+
+export interface TokenPayload {
+  admin_id: string;
+  email: string;
+  username: string;
+  iat: number;
+  exp: number;
+}
