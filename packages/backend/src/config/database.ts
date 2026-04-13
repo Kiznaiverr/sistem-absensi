@@ -1,17 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 import env from "./env.js";
 
-if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) {
+if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) {
   throw new Error("Supabase configuration is missing");
 }
 
 export const supabaseClient = createClient(
   env.SUPABASE_URL,
-  env.SUPABASE_ANON_KEY,
+  env.SUPABASE_PUBLISHABLE_KEY,
   {
     global: {
       headers: {
-        Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+        Authorization: `Bearer ${env.SUPABASE_PUBLISHABLE_KEY}`,
       },
     },
   },
@@ -19,11 +19,11 @@ export const supabaseClient = createClient(
 
 export const supabaseAdmin = createClient(
   env.SUPABASE_URL,
-  env.SUPABASE_SERVICE_ROLE_KEY,
+  env.SUPABASE_SECRET_KEY,
   {
     global: {
       headers: {
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        Authorization: `Bearer ${env.SUPABASE_SECRET_KEY}`,
       },
     },
   },
