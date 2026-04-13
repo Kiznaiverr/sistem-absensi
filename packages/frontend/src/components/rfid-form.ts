@@ -179,16 +179,18 @@ export class RFIDFormComponent {
    */
   private setupErrorSidebarListeners(): void {
     const errorHeader = document.getElementById("error-header");
-    const clearBtn = document.getElementById("error-clear");
 
     if (errorHeader) {
       // Remove all existing listeners by cloning and replacing
-      const newErrorHeader = errorHeader.cloneNode(true);
+      const newErrorHeader = errorHeader.cloneNode(true) as HTMLElement;
       errorHeader.parentNode?.replaceChild(newErrorHeader, errorHeader);
 
+      // Toggle collapse/expand on header click
       newErrorHeader.addEventListener("click", (e) => {
+        const target = e.target as HTMLElement;
+
         // Don't toggle when clicking clear button
-        if ((e.target as HTMLElement).classList.contains("error-clear-btn")) {
+        if (target.classList.contains("error-clear-btn")) {
           return;
         }
 
@@ -204,18 +206,19 @@ export class RFIDFormComponent {
           icon.textContent = isHidden ? "[^]" : "[v]";
         }
       });
-    }
 
-    if (clearBtn) {
-      const newClearBtn = clearBtn.cloneNode(true);
-      clearBtn.parentNode?.replaceChild(newClearBtn, clearBtn);
-
-      newClearBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.errors = [];
-        this.renderErrorSidebar();
-      });
+      // Setup clear button listener on new header element
+      const clearBtn = newErrorHeader.querySelector(
+        ".error-clear-btn",
+      ) as HTMLElement;
+      if (clearBtn) {
+        clearBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.errors = [];
+          this.renderErrorSidebar();
+        });
+      }
     }
   }
 
