@@ -11,3 +11,4 @@ dist
 logs
 package-lock.json
 dummy.sql
+package/backend/publlic
