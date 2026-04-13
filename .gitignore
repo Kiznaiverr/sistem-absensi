@@ -11,4 +11,4 @@ dist
 logs
 package-lock.json
 dummy.sql
-packages\backend\public
+packages/backend/public
