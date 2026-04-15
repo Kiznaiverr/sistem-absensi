@@ -415,26 +415,15 @@ export class ExportPageComponent {
     this.render();
 
     try {
-      const params = new URLSearchParams({
-        month: this.filters.month.toString(),
-        year: this.filters.year.toString(),
-        shift: this.filters.shift,
+      this.jsonData = await ApiService.exportAttendance({
+        month: this.filters.month,
+        year: this.filters.year,
+        shift: this.filters.shift as "siang" | "malam",
         ...(this.filters.school_type && {
           school_type: this.filters.school_type,
         }),
         ...(this.filters.class_id && { class_id: this.filters.class_id }),
       });
-
-      const response = await fetch(
-        `/api/attendance/export?${params.toString()}`,
-      );
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
-        throw new Error(error.error || `HTTP ${response.status}`);
-      }
-
-      this.jsonData = await response.json();
       this.currentState = "success";
     } catch (error) {
       this.errorMessage =
