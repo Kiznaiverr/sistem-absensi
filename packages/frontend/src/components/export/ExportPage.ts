@@ -507,7 +507,7 @@ export class ExportPageComponent {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `absensi_${this.jsonData.data.month}_${this.jsonData.data.year}.xlsx`;
+      link.download = this.generateExcelFilename();
       link.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -516,5 +516,67 @@ export class ExportPageComponent {
       this.currentState = "error";
       this.render();
     }
+  }
+
+  /**
+   * Generate filename based on exported classes
+   * Format: absensi_April2026_siang_SMP(1,2)_SMK(1,2,3).xlsx
+   */
+  private generateExcelFilename(): string {
+    const monthNames = [
+      "Januari",
+      "Februari",
+      "Maret",
+      "April",
+      "Mei",
+      "Juni",
+      "Juli",
+      "Agustus",
+      "September",
+      "Oktober",
+      "November",
+      "Desember",
+    ];
+
+    const monthName = monthNames[this.jsonData.data.month - 1];
+    const year = this.jsonData.data.year;
+    const shift = this.jsonData.data.shift;
+
+    // Extract school and class numbers from class matrices
+    const schoolMap: Record<string, number[]> = {};
+
+    for (const classMatrix of this.jsonData.data.classMatrices) {
+      const className = classMatrix.class.name; // e.g., "SMP-1", "SMK-2"
+      const match = className.match(/^([A-Z]+)-(\d+)$/);
+
+      if (match) {
+        const school = match[1]; // SMP, SMK
+        const classNum = parseInt(match[2]); // 1, 2, 3
+
+        if (!schoolMap[school]) {
+          schoolMap[school] = [];
+        }
+        if (!schoolMap[school].includes(classNum)) {
+          schoolMap[school].push(classNum);
+        }
+      }
+    }
+
+    // Sort class numbers for each school
+    for (const school in schoolMap) {
+      schoolMap[school].sort((a, b) => a - b);
+    }
+
+    // Build filename: SMP(1,2)_SMK(1,2,3)
+    const schoolParts = Object.keys(schoolMap)
+      .sort() // Alphabetical order: SMP before SMK
+      .map((school) => {
+        const classes = schoolMap[school].join(",");
+        return `${school}(${classes})`;
+      });
+
+    const schoolInfo = schoolParts.join("_");
+
+    return `absensi_${monthName}${year}_${shift}_${schoolInfo}.xlsx`;
   }
 }
