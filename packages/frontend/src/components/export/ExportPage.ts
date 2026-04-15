@@ -22,6 +22,13 @@ export class ExportPageComponent {
   private classes: any[] = [];
   private jsonData: any = null;
   private errorMessage: string = "";
+  private availableMonthsByShift: Record<
+    "siang" | "malam",
+    { years: number[]; months_by_year: Record<number, number[]> }
+  > = {
+    siang: { years: [], months_by_year: {} },
+    malam: { years: [], months_by_year: {} },
+  };
 
   private filters: FilterState = {
     month: new Date().getMonth() + 1,
@@ -36,7 +43,11 @@ export class ExportPageComponent {
   }
 
   async init(): Promise<void> {
-    await this.loadClasses();
+    await Promise.all([
+      this.loadClasses(),
+      this.loadAvailableMonths("siang"),
+      this.loadAvailableMonths("malam"),
+    ]);
     this.render();
     this.setupEventListeners();
   }
@@ -47,6 +58,16 @@ export class ExportPageComponent {
     } catch (error) {
       console.error("Failed to load classes:", error);
       this.classes = [];
+    }
+  }
+
+  private async loadAvailableMonths(shift: "siang" | "malam"): Promise<void> {
+    try {
+      const data = await ApiService.getAvailableMonths(shift);
+      this.availableMonthsByShift[shift] = data;
+    } catch (error) {
+      console.error(`Failed to load available months for ${shift}:`, error);
+      this.availableMonthsByShift[shift] = { years: [], months_by_year: {} };
     }
   }
 
@@ -136,6 +157,24 @@ export class ExportPageComponent {
     filteredClasses: any[],
     monthNames: string[],
   ): string {
+    // Get available years and months for current shift
+    const availableData =
+      this.filters.shift && this.availableMonthsByShift[this.filters.shift]
+        ? this.availableMonthsByShift[this.filters.shift]
+        : { years: [], months_by_year: {} };
+
+    // Use available years, or fallback to standard range
+    const yearsToShow =
+      availableData.years.length > 0
+        ? availableData.years
+        : [2024, 2025, 2026, 2027];
+
+    // Get months for current year
+    const monthsForYear = availableData.months_by_year[this.filters.year] || [];
+
+    // Check if shift is selected
+    const shiftSelected = !!this.filters.shift;
+
     return `
       <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
         <!-- Header -->
@@ -146,33 +185,7 @@ export class ExportPageComponent {
 
         <!-- Form Grid -->
         <div class="space-y-5">
-          <!-- Row 1: Month & Year -->
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-semibold text-gray-700 mb-2">Bulan</label>
-              <select id="filter-month" class="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent">
-                ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
-                  .map(
-                    (m) =>
-                      `<option value="${m}" ${m === this.filters.month ? "selected" : ""}>${monthNames[m - 1]}</option>`,
-                  )
-                  .join("")}
-              </select>
-            </div>
-            <div>
-              <label class="block text-sm font-semibold text-gray-700 mb-2">Tahun</label>
-              <select id="filter-year" class="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent">
-                ${[2024, 2025, 2026, 2027]
-                  .map(
-                    (y) =>
-                      `<option value="${y}" ${y === this.filters.year ? "selected" : ""}>${y}</option>`,
-                  )
-                  .join("")}
-              </select>
-            </div>
-          </div>
-
-          <!-- Row 2: Shift -->
+          <!-- Row 1: Shift (MOVED UP) -->
           <div>
             <label class="block text-sm font-semibold text-gray-700 mb-3">Shift</label>
             <div class="space-y-2">
@@ -184,6 +197,41 @@ export class ExportPageComponent {
                 <input type="radio" name="shift" value="malam" ${this.filters.shift === "malam" ? "checked" : ""} class="w-4 h-4 accent-amber-600">
                 <span class="ml-3 text-sm font-medium text-gray-900">Malam</span>
               </label>
+            </div>
+          </div>
+
+          <!-- Row 2: Month & Year -->
+          <div>
+            <p class="text-xs text-gray-500 mb-3">Pilih shift untuk menampilkan bulan yang tersedia</p>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Bulan</label>
+                <select id="filter-month" class="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                  ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+                    .map((m) => {
+                      // If shift not selected, disable all months
+                      if (!shiftSelected) {
+                        return `<option value="${m}" disabled>${monthNames[m - 1]} (Pilih shift dulu)</option>`;
+                      }
+                      // If shift selected, check if month has data
+                      const hasData = monthsForYear.includes(m);
+                      const disabledAttr = !hasData ? "disabled" : "";
+                      return `<option value="${m}" ${m === this.filters.month ? "selected" : ""} ${disabledAttr}>${monthNames[m - 1]}${!hasData ? " (Tidak ada data)" : ""}</option>`;
+                    })
+                    .join("")}
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Tahun</label>
+                <select id="filter-year" class="w-full px-3 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent">
+                  ${yearsToShow
+                    .map(
+                      (y) =>
+                        `<option value="${y}" ${y === this.filters.year ? "selected" : ""}>${y}</option>`,
+                    )
+                    .join("")}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -341,6 +389,8 @@ export class ExportPageComponent {
 
     document.getElementById("filter-year")?.addEventListener("change", (e) => {
       this.filters.year = parseInt((e.target as HTMLSelectElement).value);
+      // Re-render to update available months for the selected year
+      this.render();
     });
 
     document
@@ -369,6 +419,8 @@ export class ExportPageComponent {
         this.filters.shift = (e.target as HTMLInputElement).value as
           | "siang"
           | "malam";
+        // Re-render to update available months for the selected shift
+        this.render();
       });
     });
 

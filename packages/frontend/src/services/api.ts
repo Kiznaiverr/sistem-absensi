@@ -184,6 +184,21 @@ export class ApiService {
   }
 
   /**
+   * GET /api/attendance/available-months
+   * Get available months and years with attendance data
+   */
+  static async getAvailableMonths(shift: "siang" | "malam"): Promise<{
+    years: number[];
+    months_by_year: Record<number, number[]>;
+  }> {
+    const response = await this.request<ApiResponse>(
+      "GET",
+      `/attendance/available-months?shift=${shift}`,
+    );
+    return response.data || { years: [], months_by_year: {} };
+  }
+
+  /**
    * POST /api/classes/init-cache
    * Reinitialize cache (internal endpoint)
    */

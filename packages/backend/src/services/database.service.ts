@@ -542,4 +542,80 @@ export class DatabaseService {
       // Don't throw - this is not critical
     }
   }
+
+  /**
+   * Get available months and years with attendance data
+   * Returns months/years that have attendance records
+   */
+  static async getAvailableMonths(
+    shift: "siang" | "malam",
+  ): Promise<{ years: number[]; months_by_year: Record<number, number[]> }> {
+    try {
+      // Get unique dates from active table
+      const { data: activeData, error: activeError } = await supabaseClient
+        .from("attendance_logs")
+        .select("date")
+        .eq("shift", shift);
+
+      if (activeError) throw activeError;
+
+      // Get unique dates from archive table
+      const { data: archiveData, error: archiveError } = await supabaseClient
+        .from("attendance_logs_archive")
+        .select("date")
+        .eq("shift", shift);
+
+      if (archiveError) throw archiveError;
+
+      // Combine and extract unique months/years
+      const allDates = [...(activeData || []), ...(archiveData || [])];
+      const monthYearSet = new Set<string>();
+
+      for (const record of allDates) {
+        if (record.date) {
+          const dateObj = new Date(record.date);
+          const year = dateObj.getFullYear();
+          const month = dateObj.getMonth() + 1; // 1-12
+          monthYearSet.add(`${year}-${String(month).padStart(2, "0")}`);
+        }
+      }
+
+      // Parse and organize by year
+      const monthsByYear: Record<number, number[]> = {};
+      for (const monthYearStr of monthYearSet) {
+        const [yearStr, monthStr] = monthYearStr.split("-");
+        const year = parseInt(yearStr);
+        const month = parseInt(monthStr);
+
+        if (!monthsByYear[year]) {
+          monthsByYear[year] = [];
+        }
+        if (!monthsByYear[year].includes(month)) {
+          monthsByYear[year].push(month);
+        }
+      }
+
+      // Sort months for each year
+      const years = Object.keys(monthsByYear)
+        .map(Number)
+        .sort((a, b) => b - a); // Descending order
+      for (const year of years) {
+        monthsByYear[year].sort((a, b) => a - b);
+      }
+
+      logger.info("Available months fetched", {
+        shift,
+        years,
+        total_months: monthYearSet.size,
+      });
+
+      return {
+        years,
+        months_by_year: monthsByYear,
+      };
+    } catch (error) {
+      logger.error("Failed to get available months", { shift, error });
+      throw error;
+    }
+  }
 }

@@ -147,6 +147,41 @@ router.get(
 );
 
 /**
+ * GET /api/attendance/available-months
+ * Get months and years with available attendance data
+ * Query params: shift (siang|malam)
+ */
+router.get(
+  "/available-months",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { shift } = req.query;
+
+      // Validate shift parameter
+      if (!shift || (shift !== "siang" && shift !== "malam")) {
+        return res.status(400).json({
+          success: false,
+          error: "Shift is required (siang or malam)",
+          error_code: "MISSING_SHIFT",
+        });
+      }
+
+      const availableMonths = await DatabaseService.getAvailableMonths(
+        shift as "siang" | "malam",
+      );
+
+      res.json({
+        success: true,
+        data: availableMonths,
+      });
+    } catch (error) {
+      logger.error("Error getting available months", error);
+      next(error);
+    }
+  },
+);
+
+/**
  * GET /api/attendance/export
  * Export attendance data as JSON (attendance matrices)
  * Query params: month, year, shift (siang|malam), school_type, class_id
@@ -241,6 +276,15 @@ router.get(
         );
 
         classMatrices.push(matrix);
+      }
+
+      // Validate that there's actual attendance data
+      if (exportData.attendance_logs.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: `Tidak ada data absensi untuk bulan ${monthName} ${queryYear} shift ${shift}`,
+          error_code: "NO_ATTENDANCE_DATA",
+        });
       }
 
       // Return JSON data
