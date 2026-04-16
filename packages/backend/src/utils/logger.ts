@@ -67,33 +67,49 @@ export class Logger {
     console.log(this.format(LogLevel.INFO, message, data));
   }
 
+  /**
+   * Log warning level messages
+   */
   warn(message: string, data?: any): void {
     console.warn(this.format(LogLevel.WARN, message, data));
   }
 
+  /**
+   * Log error level messages and write to error.log file
+   * Automatically strips ANSI color codes before writing to file
+   */
   error(message: string, data?: any): void {
     const formattedMessage = this.format(LogLevel.ERROR, message, data);
     console.error(formattedMessage);
 
-    // Write to error.log file
+    /**
+     * Write to error.log file for persistent error tracking
+     */
     try {
       const logDir = path.join(process.cwd(), "logs");
       const logFile = path.join(logDir, "error.log");
 
-      // Create logs directory if not exist
+      /**
+       * Create logs directory if it doesn't exist
+       */
       if (!fs.existsSync(logDir)) {
         fs.mkdirSync(logDir, { recursive: true });
       }
 
-      // Append to error.log (remove ANSI colors for file)
-      const cleanMessage = formattedMessage
-        .replace(/\x1b\[[0-9;]*m/g, "")
-        .replace(/\[DEBUG\]|\[INFO\]|\[WARN\]|\[ERROR\]/g, (match) => match);
+      /**
+       * Remove ANSI color codes from message before writing to file
+       * ANSI color pattern: \x1b[...m
+       */
+      const cleanMessage = formattedMessage.replace(/\x1b\[[0-9;]*m/g, "");
 
       fs.appendFileSync(logFile, cleanMessage + "\n");
     } catch (err) {
-      // Silent fail if logging fails
-      console.error("Failed to write to error.log", err);
+      /**
+       * Silently catch file write errors to prevent logging from crashing the app
+       */
+      if (process.env.NODE_ENV === "development") {
+        console.error("Failed to write to error.log", err);
+      }
     }
   }
 }

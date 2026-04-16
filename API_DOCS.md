@@ -10,6 +10,7 @@ API ini menyediakan endpoint untuk:
 - Monitoring attendance harian dan bulanan
 - Export data attendance dalam format JSON matrix untuk preview dan processing lanjutan
 - Management data santri dan kelas dengan caching
+- Administrative monitoring dan system stats
 
 **Base URL:** `http://localhost:5000`
 
@@ -18,6 +19,23 @@ API ini menyediakan endpoint untuk:
 **Response Format:** Semua response menggunakan JSON dengan struktur konsisten
 
 **Authentication:** Semua endpoint kecuali `/health` dan `/api/auth/*` memerlukan JWT token dalam header `Authorization: Bearer <token>`
+
+## Rate Limiting
+
+API implements the following rate limits to protect endpoints:
+
+- **Login endpoint** (`POST /api/auth/login`): 10 attempts per 15 minutes per IP
+- **API endpoints** (all others): 20 requests per second per IP
+
+When rate limit is exceeded, server responds with HTTP 429:
+
+```json
+{
+  "success": false,
+  "error": "Terlalu banyak percobaan login. Coba lagi dalam 15 menit.",
+  "error_code": "RATE_LIMIT_EXCEEDED"
+}
+```
 
 ---
 
@@ -49,6 +67,7 @@ Semua error response mengikuti format berikut:
 | `TOKEN_VALIDATION_ERROR` | Token validation gagal                 | Error saat verify token                     |
 | `MISSING_REFRESH_TOKEN`  | Refresh token diperlukan               | Refresh token tidak ada di request body     |
 | `INVALID_REFRESH_TOKEN`  | Invalid atau expired refresh token     | Refresh token sudah expired                 |
+| `RATE_LIMIT_EXCEEDED`    | Terlalu banyak percobaan               | Rate limit tercapai, tunggu sebelum retry   |
 
 ### Attendance Errors
 
@@ -66,9 +85,7 @@ Semua error response mengikuti format berikut:
 
 ---
 
-## Authentication
-
-### Token Information
+## Token Information
 
 - **Access Token:** Valid 12 jam (43200 detik, configurable via ACCESS_TOKEN_EXPIRES_IN)
 - **Refresh Token:** Valid 7 hari (604800 detik, configurable via REFRESH_TOKEN_EXPIRES_IN)
@@ -88,32 +105,9 @@ Semua error response mengikuti format berikut:
 
 ## Endpoints
 
-### 1. Health Check
+### Authentication
 
-```
-GET /health
-```
-
-**Deskripsi:** Check status server (tidak perlu token)
-
-**Response:**
-
-```json
-{
-  "status": "ok",
-  "timestamp": "2026-04-11T10:30:45.123Z"
-}
-```
-
-**cURL:**
-
-```bash
-curl -X GET http://localhost:5000/health
-```
-
----
-
-### 2. Login
+#### 1. Login
 
 ```
 POST /api/auth/login
@@ -135,7 +129,7 @@ POST /api/auth/login
 - `username_or_email` (string, required): Username atau email admin
 - `password` (string, required): Password plain text (akan di-hash server-side)
 
-**Response (Success):**
+**Response (Success - HTTP 200):**
 
 ```json
 {
@@ -150,7 +144,7 @@ POST /api/auth/login
     },
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "expires_in": 3600
+    "expires_in": 43200
   }
 }
 ```
@@ -160,6 +154,7 @@ POST /api/auth/login
 - 400: `INVALID_LOGIN_REQUEST` - Data login tidak lengkap
 - 401: `INVALID_CREDENTIALS` - Username/email atau password salah
 - 401: `ADMIN_INACTIVE` - Akun admin tidak aktif
+- 429: `RATE_LIMIT_EXCEEDED` - Too many login attempts
 
 **cURL:**
 
@@ -174,7 +169,7 @@ curl -X POST http://localhost:5000/api/auth/login \
 
 ---
 
-### 3. Refresh Token
+#### 2. Refresh Token
 
 ```
 POST /api/auth/refresh
@@ -194,14 +189,18 @@ POST /api/auth/refresh
 
 - `refresh_token` (string, required): Refresh token dari login response
 
-**Response (Success):**
+**Response (Success - HTTP 200):**
 
 ```json
 {
   "success": true,
   "data": {
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "expires_in": 3600
+    "expires_in": 43200,
+    "admin": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "username": "admin"
+    }
   }
 }
 ```
@@ -223,7 +222,41 @@ curl -X POST http://localhost:5000/api/auth/refresh \
 
 ---
 
-### 4. Batch RFID Scan
+#### 3. Logout
+
+```
+POST /api/auth/logout
+```
+
+**Deskripsi:** Logout dan invalidate session. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (Success - HTTP 200):**
+
+```json
+{
+  "success": true,
+  "message": "Logout successful"
+}
+```
+
+**cURL:**
+
+```bash
+curl -X POST http://localhost:5000/api/auth/logout \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
+### Attendance Management
+
+#### 4. Batch RFID Scan
 
 ```
 POST /api/attendance/batch
@@ -262,7 +295,7 @@ Authorization: Bearer <access_token>
   - `shift` (string, optional): "siang" or "malam". Jika tidak ada, auto-detect berdasarkan waktu
 - `date` (string, optional): Format YYYY-MM-DD. Default: hari ini
 
-**Response (Success):**
+**Response (Success - HTTP 200):**
 
 ```json
 {
@@ -306,7 +339,7 @@ curl -X POST http://localhost:5000/api/attendance/batch \
 
 ---
 
-### 5. Today Summary
+#### 5. Today Summary
 
 ```
 GET /api/attendance/today
@@ -344,7 +377,7 @@ curl -X GET http://localhost:5000/api/attendance/today \
 
 ---
 
-### 6. Monthly Attendance
+#### 6. Monthly Attendance
 
 ```
 GET /api/attendance/month
@@ -366,7 +399,7 @@ Authorization: Bearer <access_token>
 - `class_id` (string): UUID kelas (optional)
 - `shift` (string): "siang" atau "malam" (optional)
 
-**Response:**
+**Response (HTTP 200):**
 
 ```json
 {
@@ -414,7 +447,64 @@ curl -X GET "http://localhost:5000/api/attendance/month?class_id=<class-uuid>" \
 
 ---
 
-### 7. Export Attendance Data (JSON)
+#### 7. Available Months
+
+```
+GET /api/attendance/available-months
+```
+
+**Deskripsi:** Get list of bulan yang memiliki data attendance. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "month": 0,
+      "year": 2026,
+      "monthName": "January",
+      "count": 120
+    },
+    {
+      "month": 1,
+      "year": 2026,
+      "monthName": "February",
+      "count": 115
+    },
+    {
+      "month": 2,
+      "year": 2026,
+      "monthName": "March",
+      "count": 130
+    },
+    {
+      "month": 3,
+      "year": 2026,
+      "monthName": "April",
+      "count": 145
+    }
+  ]
+}
+```
+
+**cURL:**
+
+```bash
+curl -X GET http://localhost:5000/api/attendance/available-months \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
+#### 8. Export Attendance Data (JSON)
 
 ```
 GET /api/attendance/export
@@ -442,7 +532,7 @@ Authorization: Bearer <access_token>
 - Jika `school_type` diisi ("SMP" atau "SMK"): `class_id` harus UUID kelas spesifik
 - Jika `class_id` kosong: semua kelas akan di-include
 
-**Response Format:**
+**Response Format (HTTP 200):**
 
 ```json
 {
@@ -464,10 +554,9 @@ Authorization: Bearer <access_token>
           "santriName": "Ahmad Fadli",
           "rfidId": "RFD001001",
           "attendance": [
-            "✓", // Hadir tanggal 1
-            "", // Tidak hadir tanggal 2
-            "✓" // Hadir tanggal 3
-            // ... sampai tanggal 30
+            "✓",
+            "",
+            "✓"
           ],
           "totalPresent": 28,
           "totalAbsent": 2,
@@ -485,7 +574,7 @@ Authorization: Bearer <access_token>
 - `attendance`: Array 30 elemen (sesuai `daysInMonth`) dengan "✓" untuk hadir, "" untuk tidak hadir
 - `totalPresent`: Jumlah hari hadir
 - `totalAbsent`: Jumlah hari tidak hadir
-- `percentage`: Persentase kehadiran (totalPresent / daysInMonth \* 100)
+- `percentage`: Persentase kehadiran (totalPresent / daysInMonth * 100)
 
 **Error Responses:**
 
@@ -521,32 +610,11 @@ curl -X GET "http://localhost:5000/api/attendance/export?month=4&year=2026&shift
   -H "Authorization: Bearer <access_token>"
 ```
 
-### 7.5 Export to Excel (Frontend)
-
-**Deskripsi:** Frontend component untuk export attendance data ke file Excel (.xlsx) dengan formatting profesional.
-
-**Features:**
-
-- Filter form dengan month, year, shift, school_type, class_id
-- Real-time preview JSON data
-- State-based UI: form → loading → success/error
-- Direct XLSX download menggunakan ExcelJS
-- Error handling dan retry logic
-- Professional minimalist design dengan grid layout
-
-**Usage:** Navigate ke `/export` di frontend untuk mengakses export interface.
-
-**Response Format (Excel File):**
-
-- Attendance matrix dengan nama santri sebagai baris
-- Tanggal bulan sebagai kolom (1-31)
-- Mark "✓" untuk hadir, kosong untuk tidak hadir
-- Summary: Total hadir, absen, persentase per santri
-- Metadata sheet: Period, shift, school type, total santri
-
 ---
 
-### 8. Get All Classes
+### Classes and Santri Management
+
+#### 9. Get All Classes
 
 ```
 GET /api/classes
@@ -560,7 +628,7 @@ GET /api/classes
 Authorization: Bearer <access_token>
 ```
 
-**Response:**
+**Response (HTTP 200):**
 
 ```json
 {
@@ -600,7 +668,7 @@ curl -X GET http://localhost:5000/api/classes \
 
 ---
 
-### 9. Get Santri by Class
+#### 10. Get Santri by Class
 
 ```
 GET /api/classes/:classId/santri
@@ -618,7 +686,7 @@ Authorization: Bearer <access_token>
 
 - `classId` (string): UUID kelas (dari endpoint GET /api/classes)
 
-**Response:**
+**Response (HTTP 200):**
 
 ```json
 {
@@ -653,7 +721,7 @@ curl -X GET http://localhost:5000/api/classes/uuid-smp1/santri \
 
 ---
 
-### 10. Reinitialize Cache (Debug)
+#### 11. Reinitialize Cache (Debug)
 
 ```
 POST /api/classes/init-cache
@@ -667,7 +735,7 @@ POST /api/classes/init-cache
 Authorization: Bearer <access_token>
 ```
 
-**Response:**
+**Response (HTTP 200):**
 
 ```json
 {
@@ -685,6 +753,189 @@ Authorization: Bearer <access_token>
 
 ```bash
 curl -X POST http://localhost:5000/api/classes/init-cache \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
+### Administrative
+
+#### 12. Health Check
+
+```
+GET /health
+```
+
+**Deskripsi:** Check status server (tidak perlu token). Dapat digunakan untuk monitoring.
+
+**Response (HTTP 200):**
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-04-11T10:30:45.123Z"
+}
+```
+
+**cURL:**
+
+```bash
+curl -X GET http://localhost:5000/health
+```
+
+---
+
+#### 13. System Statistics
+
+```
+GET /api/admin/stats
+```
+
+**Deskripsi:** Get system statistics dan monitoring info. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "total_santri": 240,
+    "total_classes": 6,
+    "total_attendance_records": 8523,
+    "smp_count": 3,
+    "smk_count": 3,
+    "cache_status": {
+      "enabled": true,
+      "entries": 120,
+      "memory_usage_kb": 45
+    },
+    "archive_status": {
+      "last_archive": "2026-04-10T02:00:00Z",
+      "archive_count": 1,
+      "total_archived_records": 0
+    },
+    "server": {
+      "uptime_seconds": 86400,
+      "memory_usage_mb": 128,
+      "version": "1.0.0"
+    }
+  }
+}
+```
+
+**cURL:**
+
+```bash
+curl -X GET http://localhost:5000/api/admin/stats \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
+#### 14. Archive Status
+
+```
+GET /api/admin/archive/status
+```
+
+**Deskripsi:** Get status archive data. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "archive_enabled": true,
+    "last_archive_date": "2026-04-10T02:00:00Z",
+    "archive_job_time": "02:00",
+    "total_records_archived": 0,
+    "scheduled": true,
+    "next_archive_date": "2026-04-11T02:00:00Z"
+  }
+}
+```
+
+**cURL:**
+
+```bash
+curl -X GET http://localhost:5000/api/admin/archive/status \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
+#### 15. Archive History
+
+```
+GET /api/admin/archive/history
+```
+
+**Deskripsi:** Get history dari semua archive operations. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Query Parameters:**
+
+- `limit` (number, optional): Max records (default: 50)
+- `offset` (number, optional): Pagination offset (default: 0)
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "total": 5,
+    "limit": 50,
+    "offset": 0,
+    "history": [
+      {
+        "id": "uuid-archive-1",
+        "archive_date": "2026-04-10T02:00:00Z",
+        "records_count": 245,
+        "status": "success",
+        "message": "Archive completed successfully"
+      },
+      {
+        "id": "uuid-archive-2",
+        "archive_date": "2026-04-09T02:00:00Z",
+        "records_count": 228,
+        "status": "success",
+        "message": "Archive completed successfully"
+      }
+    ]
+  }
+}
+```
+
+**cURL:**
+
+```bash
+curl -X GET http://localhost:5000/api/admin/archive/history \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**cURL - With pagination:**
+
+```bash
+curl -X GET "http://localhost:5000/api/admin/archive/history?limit=10&offset=0" \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -711,6 +962,8 @@ curl -X POST http://localhost:5000/api/classes/init-cache \
 | ---- | ------------------------------------ |
 | 200  | OK - Request berhasil                |
 | 400  | Bad Request - Data tidak valid       |
+| 401  | Unauthorized - Token invalid/missing |
+| 429  | Too Many Requests - Rate limit exceeded |
 | 500  | Internal Server Error - Error server |
 
 ---
@@ -720,7 +973,7 @@ curl -X POST http://localhost:5000/api/classes/init-cache \
 ### Classes
 
 ```
-id: UUID
+id: UUID (primary key)
 name: string (unique) - "SMP-1", "SMK-3", etc
 school_type: string - "SMP" or "SMK"
 grade: int (1, 2, 3)
@@ -730,7 +983,7 @@ created_at: timestamp
 ### Santri
 
 ```
-id: UUID
+id: UUID (primary key)
 rfid_id: string (unique) - RFID card identifier
 name: string
 class_id: UUID (FK -> classes)
@@ -741,7 +994,7 @@ created_at: timestamp
 ### Attendance Logs
 
 ```
-id: UUID
+id: UUID (primary key)
 santri_id: UUID (FK -> santri)
 class_id: UUID (FK -> classes)
 date: date
@@ -754,13 +1007,25 @@ created_at: timestamp
 UNIQUE CONSTRAINT: (santri_id, date, shift)
 ```
 
+### Admin Users
+
+```
+id: UUID (primary key)
+email: string (unique)
+username: string (unique)
+password_hash: string (bcrypt/scrypt)
+is_active: boolean
+created_at: timestamp
+updated_at: timestamp
+```
+
 ---
 
 ## Caching Strategy
 
 ### Backend Cache (In-Memory)
 
-- **Classes:** 12 hours TTL
+- **Classes:** 12 hours TTL (configurable via CACHE_TTL_SANTRI)
 - **Santri per class:** 12 hours TTL
 - **Today's attendance:** 24 hours TTL
 - Auto-cleanup every 5 minutes
@@ -769,12 +1034,46 @@ UNIQUE CONSTRAINT: (santri_id, date, shift)
 
 - **Santri master:** Persistent
 - **Today's attendance:** Cleared at midnight
-- Survives page refresh
+- **Auth tokens:** Survives page refresh
+
+---
+
+## Environment Configuration
+
+Key environment variables for API configuration:
+
+```env
+# Server
+SERVER_PORT=5000
+SERVER_HOST=0.0.0.0
+
+# Authentication
+JWT_SECRET=your-secret-key (min 32 chars)
+ACCESS_TOKEN_EXPIRES_IN=43200 (12 hours in seconds)
+REFRESH_TOKEN_EXPIRES_IN=604800 (7 days in seconds)
+
+# Rate Limiting
+RATE_LIMIT_WINDOW_MS=1000 (1 second)
+RATE_LIMIT_MAX_REQUESTS=20
+LOGIN_LIMIT_WINDOW_MS=900000 (15 minutes)
+LOGIN_LIMIT_MAX_ATTEMPTS=10
+
+# Cache
+CACHE_ENABLED=true
+CACHE_TTL_SANTRI=7200 (2 hours in seconds)
+CACHE_TTL_ATTENDANCE=300 (5 minutes in seconds)
+
+# Timezone
+TIMEZONE=Asia/Jakarta
+
+# CORS
+FRONTEND_URL=http://localhost:3000,http://localhost:5000
+```
 
 ---
 
 ## Version
 
-**API Version:** 1.0.0  
-**Status:** Beta  
-**Last Updated:** April 13, 2026
+**API Version:** 1.0.0
+**Status:** Stable
+**Last Updated:** April 16, 2026

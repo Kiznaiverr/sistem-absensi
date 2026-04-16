@@ -1,12 +1,12 @@
 /**
  * Attendance Routes
- * POST /api/attendance/batch - Process batch RFID scans
- * GET /api/attendance/today - Get today's attendance summary
- * GET /api/attendance/month - Get monthly attendance data
+ * Handles RFID attendance data processing and retrieval
+ * All routes require JWT authentication
  */
 
 import { Router, Request, Response, NextFunction } from "express";
 import type { Router as ExpressRouter } from "express";
+import { body, query, validationResult } from "express-validator";
 import { AttendanceService } from "../services/attendance.service.js";
 import { DatabaseService } from "../services/database.service.js";
 import { ExportService } from "../services/export.service.js";
@@ -22,24 +22,72 @@ const router: ExpressRouter = Router();
 const logger = createLogger("AttendanceRoutes");
 
 /**
+ * Validation middleware for batch attendance
+ * Validates RFID IDs and shift values have correct format
+ */
+const validateBatchAttendanceMiddleware = [
+  body("batch")
+    .isArray({ min: 1 })
+    .withMessage("Batch must be a non-empty array"),
+  body("batch.*.rfid_id")
+    .trim()
+    .notEmpty()
+    .withMessage("RFID ID is required")
+    .isLength({ min: 1, max: 255 })
+    .withMessage("RFID ID must be between 1 and 255 characters"),
+  body("batch.*.shift")
+    .trim()
+    .isIn(["siang", "malam"])
+    .withMessage("Shift must be either 'siang' or 'malam'"),
+  body("date")
+    .trim()
+    .notEmpty()
+    .withMessage("Date is required")
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage("Date must be in YYYY-MM-DD format"),
+];
+
+/**
+ * Handle validation errors
+ */
+const handleValidationErrors = (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    res.status(400).json({
+      success: false,
+      error: "Validation failed",
+      error_code: "VALIDATION_ERROR",
+      errors: errors.array().map((error: any) => ({
+        field: error.param,
+        message: error.msg,
+      })),
+    });
+    return;
+  }
+  next();
+};
+
+/**
  * POST /api/attendance/batch
- * Process batch of RFID scans
+ * Process batch of RFID attendance scans
+ * Request body: { batch: Array<{rfid_id, shift}>, date: YYYY-MM-DD }
+ * Response: { success, data: { processed, failed, errors } }
  */
 router.post(
   "/batch",
+  validateBatchAttendanceMiddleware,
+  handleValidationErrors,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const body = req.body as BatchAttendanceRequest;
 
-      // Validate request
-      if (!body.batch || !Array.isArray(body.batch)) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid request format",
-          error_code: "INVALID_REQUEST",
-        });
-      }
-
+      /**
+       * Validate batch request using service-level validation
+       */
       const batchValidation = validateBatchRequest(body.batch);
       if (batchValidation) {
         return res.status(400).json({
@@ -49,7 +97,9 @@ router.post(
         });
       }
 
-      // Validate date format
+      /**
+       * Validate date format
+       */
       const dateValidation = validateDateFormat(body.date);
       if (dateValidation) {
         return res.status(400).json({
@@ -59,7 +109,9 @@ router.post(
         });
       }
 
-      // Process batch
+      /**
+       * Process batch attendance records
+       */
       const result = await AttendanceService.processBatch(body);
 
       res.json({

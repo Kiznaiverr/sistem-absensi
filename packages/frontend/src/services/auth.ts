@@ -9,6 +9,7 @@ export class AuthService {
   private static readonly ADMIN_KEY = "admin_data";
   private static refreshTokenTimeout: ReturnType<typeof setTimeout> | null =
     null;
+  private static isRefreshing = false; // Prevent concurrent refresh attempts
 
   /**
    * Save tokens to localStorage
@@ -59,6 +60,7 @@ export class AuthService {
     localStorage.removeItem(this.TOKEN_KEY);
     localStorage.removeItem(this.REFRESH_TOKEN_KEY);
     localStorage.removeItem(this.ADMIN_KEY);
+    this.isRefreshing = false; // Reset refresh flag
 
     if (this.refreshTokenTimeout) {
       clearTimeout(this.refreshTokenTimeout);
@@ -70,7 +72,13 @@ export class AuthService {
    * Refresh access token
    */
   static async refreshAccessToken(): Promise<string | null> {
+    // Prevent concurrent refresh attempts
+    if (this.isRefreshing) {
+      return null;
+    }
+
     try {
+      this.isRefreshing = true;
       const refreshToken = this.getRefreshToken();
       if (!refreshToken) {
         this.clearAuth();
@@ -91,19 +99,27 @@ export class AuthService {
       }
 
       const data = await response.json();
-      const newAccessToken = data.data.access_token;
+      const newAccessToken = data.data?.access_token;
+      const expiresIn = data.data?.expires_in;
+
+      if (!newAccessToken || !expiresIn) {
+        this.clearAuth();
+        return null;
+      }
 
       // Save new token
       localStorage.setItem(this.TOKEN_KEY, newAccessToken);
 
       // Schedule next refresh (before expiry)
-      this.scheduleTokenRefresh(data.data.expires_in);
+      this.scheduleTokenRefresh(expiresIn);
 
       return newAccessToken;
     } catch (error) {
       console.error("Failed to refresh token:", error);
       this.clearAuth();
       return null;
+    } finally {
+      this.isRefreshing = false;
     }
   }
 
@@ -144,8 +160,8 @@ export class AuthService {
 
     let response = await fetch(url, { ...options, headers });
 
-    // If 401, try to refresh token
-    if (response.status === 401) {
+    // If 401 and not already refreshing, try to refresh token once
+    if (response.status === 401 && !this.isRefreshing) {
       const newToken = await this.refreshAccessToken();
       if (newToken) {
         headers.Authorization = `Bearer ${newToken}`;

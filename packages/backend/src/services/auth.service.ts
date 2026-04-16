@@ -5,6 +5,7 @@
 
 import crypto from "crypto";
 import { promisify } from "util";
+import jwt from "jsonwebtoken";
 import { createLogger } from "../utils/logger.js";
 import env from "../config/env.js";
 
@@ -58,116 +59,59 @@ export class AuthService {
   /**
    * Sign JWT access token
    * Expires in 12 hours (configurable via ACCESS_TOKEN_EXPIRES_IN)
+   * Uses industry-standard jsonwebtoken library with HS256 algorithm
    */
   static signAccessToken(payload: Omit<TokenPayload, "iat" | "exp">): string {
-    const iat = Math.floor(Date.now() / 1000);
-    const exp = iat + env.ACCESS_TOKEN_EXPIRES_IN;
-
-    const tokenPayload: TokenPayload = {
-      ...payload,
-      iat,
-      exp,
-    };
-
-    return this.encodeToken(tokenPayload);
+    try {
+      const token = jwt.sign(payload, env.JWT_SECRET, {
+        algorithm: "HS256",
+        expiresIn: env.ACCESS_TOKEN_EXPIRES_IN,
+      });
+      return token;
+    } catch (error) {
+      logger.error("Error signing access token", error);
+      throw new Error("Failed to sign access token");
+    }
   }
 
   /**
    * Sign JWT refresh token
    * Expires in 7 days (configurable via REFRESH_TOKEN_EXPIRES_IN)
+   * Uses industry-standard jsonwebtoken library with HS256 algorithm
    */
   static signRefreshToken(payload: Omit<TokenPayload, "iat" | "exp">): string {
-    const iat = Math.floor(Date.now() / 1000);
-    const exp = iat + env.REFRESH_TOKEN_EXPIRES_IN;
-
-    const tokenPayload: TokenPayload = {
-      ...payload,
-      iat,
-      exp,
-    };
-
-    return this.encodeToken(tokenPayload);
+    try {
+      const token = jwt.sign(payload, env.JWT_SECRET, {
+        algorithm: "HS256",
+        expiresIn: env.REFRESH_TOKEN_EXPIRES_IN,
+      });
+      return token;
+    } catch (error) {
+      logger.error("Error signing refresh token", error);
+      throw new Error("Failed to sign refresh token");
+    }
   }
 
   /**
    * Verify JWT token
+   * Validates signature, expiry, and returns decoded payload
+   * Returns null if token is invalid or expired
    */
   static verifyToken(token: string): TokenPayload | null {
     try {
-      const decoded = this.decodeToken(token);
-
-      // Check expiry
-      const now = Math.floor(Date.now() / 1000);
-      if (decoded.exp < now) {
-        return null; // Token expired
-      }
-
+      const decoded = jwt.verify(token, env.JWT_SECRET, {
+        algorithms: ["HS256"],
+      }) as TokenPayload;
       return decoded;
     } catch (error) {
-      logger.error("Error verifying token", error);
+      if (error instanceof jwt.TokenExpiredError) {
+        logger.warn("Token has expired", { expiredAt: error.expiredAt });
+      } else if (error instanceof jwt.JsonWebTokenError) {
+        logger.warn("Invalid token", { error: error.message });
+      } else {
+        logger.error("Error verifying token", error);
+      }
       return null;
     }
-  }
-
-  /**
-   * Encode token using HMAC-SHA256 manually
-   * Format: base64(header).base64(payload).signature
-   */
-  private static encodeToken(payload: TokenPayload): string {
-    const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" }))
-      .toString("base64")
-      .replace(/=/g, "")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_");
-
-    const encodedPayload = Buffer.from(JSON.stringify(payload))
-      .toString("base64")
-      .replace(/=/g, "")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_");
-
-    const message = `${header}.${encodedPayload}`;
-
-    const signature = crypto
-      .createHmac("sha256", env.JWT_SECRET)
-      .update(message)
-      .digest("base64")
-      .replace(/=/g, "")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_");
-
-    return `${message}.${signature}`;
-  }
-
-  /**
-   * Decode token manually
-   */
-  private static decodeToken(token: string): TokenPayload {
-    const parts = token.split(".");
-    if (parts.length !== 3) {
-      throw new Error("Invalid token format");
-    }
-
-    const [header, encodedPayload, signature] = parts;
-
-    // Verify signature
-    const message = `${header}.${encodedPayload}`;
-    const expectedSignature = crypto
-      .createHmac("sha256", env.JWT_SECRET)
-      .update(message)
-      .digest("base64")
-      .replace(/=/g, "")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_");
-
-    if (signature !== expectedSignature) {
-      throw new Error("Invalid token signature");
-    }
-
-    // Decode payload
-    const payloadJson = Buffer.from(encodedPayload + "==", "base64").toString(
-      "utf-8",
-    );
-    return JSON.parse(payloadJson);
   }
 }

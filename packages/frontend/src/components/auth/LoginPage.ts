@@ -1,6 +1,6 @@
 /**
  * Login Page Component
- * Form state, loading state with spinner, and error state
+ * Form state, loading state with spinner, and error state with rate limit countdown
  */
 
 interface LoginCredentials {
@@ -8,12 +8,14 @@ interface LoginCredentials {
   password: string;
 }
 
-type UIState = "form" | "loading" | "error";
+type UIState = "form" | "loading" | "error" | "rateLimited";
 
 export class LoginPageComponent {
   private containerId: string;
   private currentState: UIState = "form";
   private errorMessage: string = "";
+  private countdownSeconds: number = 0;
+  private countdownInterval: ReturnType<typeof setInterval> | null = null;
   private onLoginSuccess: (data: any) => void;
 
   constructor(containerId: string, onLoginSuccess: (data: any) => void) {
@@ -36,6 +38,8 @@ export class LoginPageComponent {
       content = this.renderFormState();
     } else if (this.currentState === "loading") {
       content = this.renderLoadingState();
+    } else if (this.currentState === "rateLimited") {
+      content = this.renderRateLimitedState();
     } else if (this.currentState === "error") {
       content = this.renderErrorState();
     }
@@ -160,6 +164,60 @@ export class LoginPageComponent {
     `;
   }
 
+  private renderRateLimitedState(): string {
+    const minutes = Math.ceil(this.countdownSeconds / 60);
+    const seconds = this.countdownSeconds % 60;
+    const formattedTime = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+
+    return `
+      <div class="w-full">
+        <!-- Header -->
+        <div class="mb-8 text-center animate-slideDown">
+          <h1 class="text-4xl font-bold text-gray-900 tracking-tight">Absensi Santri</h1>
+        </div>
+
+        <!-- Rate Limited Card -->
+        <div class="bg-white rounded-xl shadow-lg p-6 animate-fadeInUp border border-orange-200">
+          <!-- Icon & Header -->
+          <div class="mb-6 text-center">
+            <div class="inline-flex items-center justify-center w-16 h-16 bg-orange-100 rounded-full mb-4 animate-pulse">
+              <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4v.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            </div>
+            <h2 class="text-2xl font-bold text-orange-600">Terlalu Banyak Percobaan</h2>
+            <p class="text-gray-600 text-sm mt-2">Akun Anda telah diblokir sementara untuk keamanan</p>
+          </div>
+
+          <!-- Message -->
+          <div class="mb-6 p-4 bg-orange-50 rounded-lg border border-orange-200">
+            <p class="text-sm text-orange-700 text-center">Silakan tunggu sebelum mencoba login lagi.</p>
+          </div>
+
+          <!-- Countdown Timer -->
+          <div class="mb-6 text-center">
+            <div class="inline-block bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg px-6 py-4 text-white">
+              <p class="text-xs font-medium text-orange-100 mb-1">Waktu Tersisa</p>
+              <p id="countdown-timer" class="text-4xl font-bold font-mono">${formattedTime}</p>
+            </div>
+          </div>
+
+          <!-- Info -->
+          <div class="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <p class="text-xs text-blue-700">
+              <strong>💡 Tip:</strong> Untuk keamanan akun, sistem membatasi jumlah percobaan login. Coba lagi dalam beberapa menit atau hubungi admin jika lupa password.
+            </p>
+          </div>
+
+          <!-- Action Button -->
+          <button id="btn-wait" disabled class="w-full px-4 py-2.5 bg-gray-300 text-gray-600 font-medium rounded-lg cursor-not-allowed transition-colors duration-200">
+            Menunggu... (${formattedTime})
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
   private setupEventListeners(): void {
     if (this.currentState === "form") {
       const form = document.getElementById("login-form") as HTMLFormElement;
@@ -167,6 +225,9 @@ export class LoginPageComponent {
         e.preventDefault();
         this.handleLogin();
       });
+    } else if (this.currentState === "rateLimited") {
+      // Rate limited state - countdown will auto update
+      this.startCountdown();
     } else if (this.currentState === "error") {
       document.getElementById("btn-back")?.addEventListener("click", () => {
         this.currentState = "form";
@@ -178,6 +239,41 @@ export class LoginPageComponent {
         this.render();
       });
     }
+  }
+
+  private startCountdown(): void {
+    if (this.countdownInterval) {
+      clearInterval(this.countdownInterval);
+    }
+
+    // Start with 15 minutes (900 seconds)
+    this.countdownSeconds = 900;
+
+    this.countdownInterval = setInterval(() => {
+      this.countdownSeconds--;
+
+      // Update timer display
+      const timerElement = document.getElementById("countdown-timer");
+      const waitButton = document.getElementById("btn-wait");
+
+      if (timerElement && waitButton) {
+        const minutes = Math.ceil(this.countdownSeconds / 60);
+        const seconds = this.countdownSeconds % 60;
+        const formattedTime = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+
+        timerElement.textContent = formattedTime;
+        waitButton.textContent = `Menunggu... (${formattedTime})`;
+      }
+
+      // Countdown finished
+      if (this.countdownSeconds <= 0) {
+        clearInterval(this.countdownInterval!);
+        this.countdownInterval = null;
+        this.currentState = "form";
+        this.errorMessage = "";
+        this.render();
+      }
+    }, 1000);
   }
 
   private async handleLogin(): Promise<void> {
@@ -214,7 +310,24 @@ export class LoginPageComponent {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Login gagal, silakan coba lagi");
+        const errorMessage =
+          errorData.error || "Login gagal, silakan coba lagi";
+
+        // Check if this is a rate limit error
+        if (
+          response.status === 429 ||
+          errorMessage.includes("Terlalu banyak percobaan")
+        ) {
+          this.currentState = "rateLimited";
+          this.countdownSeconds = 900; // 15 minutes
+          this.render();
+          return;
+        }
+
+        this.errorMessage = errorMessage;
+        this.currentState = "error";
+        this.render();
+        return;
       }
 
       const data = await response.json();
@@ -224,6 +337,17 @@ export class LoginPageComponent {
         error instanceof Error ? error.message : "Terjadi kesalahan saat login";
       this.currentState = "error";
       this.render();
+    }
+  }
+
+  /**
+   * Cleanup method - call when component is destroyed
+   * Clears countdown intervals to prevent memory leaks
+   */
+  cleanup(): void {
+    if (this.countdownInterval) {
+      clearInterval(this.countdownInterval);
+      this.countdownInterval = null;
     }
   }
 }

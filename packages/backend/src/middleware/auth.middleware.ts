@@ -1,15 +1,19 @@
 /**
  * Auth Middleware
- * Validates JWT tokens and extracts admin info
+ * Validates JWT tokens from HttpOnly cookies or Authorization header
+ * Attaches admin info to request for downstream handlers
  */
 
 import { Request, Response, NextFunction } from "express";
 import { AuthService } from "../services/auth.service.js";
+import { AuditService } from "../utils/audit.js";
 import { createLogger } from "../utils/logger.js";
 
 const logger = createLogger("AuthMiddleware");
 
-// Extend Express Request to include admin info
+/**
+ * Extend Express Request to include admin info
+ */
 declare global {
   namespace Express {
     interface Request {
@@ -23,8 +27,27 @@ declare global {
 }
 
 /**
- * Validate JWT token from Authorization header
- * Header format: Authorization: Bearer <token>
+ * Helper function to get client IP address
+ */
+function getClientIp(req: Request): string | undefined {
+  return (
+    (req.headers["x-forwarded-for"] as string)?.split(",")[0].trim() ||
+    req.socket.remoteAddress
+  );
+}
+
+/**
+ * Helper function to get user agent
+ */
+function getUserAgent(req: Request): string | undefined {
+  return req.headers["user-agent"];
+}
+
+/**
+ * Validate JWT token from HttpOnly cookie or Authorization header
+ * Token precedence:
+ * 1. HttpOnly cookie (access_token)
+ * 2. Authorization header Bearer schema (backward compatibility)
  */
 export async function validateToken(
   req: Request,
@@ -32,21 +55,67 @@ export async function validateToken(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const authHeader = req.headers.authorization;
+    let token: string | undefined;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    /**
+     * Try to get token from HttpOnly cookie first (secure)
+     */
+    token = req.cookies?.access_token;
+
+    /**
+     * Fall back to Authorization header if no cookie
+     * Format: Authorization: Bearer <token>
+     */
+    if (!token) {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith("Bearer ")) {
+        token = authHeader.slice(7); // Remove "Bearer "
+      }
+    }
+
+    if (!token) {
+      const clientIp = getClientIp(req);
+      const userAgent = getUserAgent(req);
+
+      /**
+       * Audit log missing token
+       */
+      await AuditService.logInvalidToken(
+        req.path,
+        req.method,
+        clientIp,
+        userAgent,
+        "No token provided",
+      );
+
       res.status(401).json({
         success: false,
-        error: "Missing or invalid authorization header",
+        error: "Missing or invalid authorization token",
         error_code: "MISSING_TOKEN",
       });
       return;
     }
 
-    const token = authHeader.slice(7); // Remove "Bearer "
+    /**
+     * Verify token signature, expiry, and validity
+     */
     const decoded = AuthService.verifyToken(token);
 
     if (!decoded) {
+      const clientIp = getClientIp(req);
+      const userAgent = getUserAgent(req);
+
+      /**
+       * Audit log invalid token
+       */
+      await AuditService.logInvalidToken(
+        req.path,
+        req.method,
+        clientIp,
+        userAgent,
+        "Invalid or expired token",
+      );
+
       res.status(401).json({
         success: false,
         error: "Invalid or expired token",
@@ -55,7 +124,9 @@ export async function validateToken(
       return;
     }
 
-    // Attach admin info to request
+    /**
+     * Attach admin info to request for downstream handlers
+     */
     req.admin = {
       admin_id: decoded.admin_id,
       email: decoded.email,

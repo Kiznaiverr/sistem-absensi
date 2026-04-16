@@ -1,45 +1,155 @@
 import express, { Express, Request, Response, NextFunction } from "express";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import helmet from "helmet";
+import cors from "cors";
+import compression from "compression";
+import cookieParser from "cookie-parser";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import env from "./config/env.js";
 import { createLogger, initializeErrorLogging } from "./utils/logger.js";
 import { AttendanceService } from "./services/attendance.service.js";
+import { enforceHttps } from "./middleware/https.middleware.js";
 import attendanceRoutes from "./routes/attendance.js";
 import classesRoutes from "./routes/classes.js";
 import adminRoutes from "./routes/admin.js";
 import authRoutes from "./routes/auth.js";
 import { validateToken } from "./middleware/auth.middleware.js";
+import { auditLoggingMiddleware } from "./middleware/audit-logging.middleware.js";
 
 const logger = createLogger("App");
 
 const app: Express = express();
 
-// Get __dirname equivalent in ES modules
+/**
+ * Get __dirname equivalent in ES modules
+ */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Middleware
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ limit: "10mb", extended: true }));
+/**
+ * Security middleware - Apply helmet for security headers
+ * Includes: CSP, X-Frame-Options, HSTS, X-Content-Type-Options, X-XSS-Protection
+ */
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:"],
+      },
+    },
+    hsts: {
+      maxAge: 31536000, // 1 year in seconds
+      includeSubDomains: true,
+      preload: true,
+    },
+  }),
+);
 
-// CORS
-app.use((req: Request, res: Response, next: NextFunction) => {
-  res.header("Access-Control-Allow-Origin", env.FRONTEND_URL);
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization",
-  );
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+/**
+ * HTTPS enforcement middleware
+ * Redirects HTTP to HTTPS in production
+ * Allows HTTP in development for local testing
+ */
+app.use(enforceHttps);
 
-  // Handle preflight
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
+/**
+ * CORS middleware - White list frontend URL(s)
+ * Supports single or multiple URLs via environment variable
+ */
+const allowedOrigins = env.FRONTEND_URL.split(",").map((url) => url.trim());
 
+app.use(
+  cors({
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Origin",
+      "X-Requested-With",
+      "Content-Type",
+      "Accept",
+      "Authorization",
+    ],
+    maxAge: 3600,
+  }),
+);
+
+/**
+ * Cookie parsing middleware
+ * Parses HttpOnly cookies from incoming requests
+ * Required for reading auth tokens from cookies
+ */
+app.use(cookieParser());
+
+/**
+ * Request body parsing middleware with size limits
+ * JSON: 5MB, URL-encoded: 5MB
+ */
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ limit: "5mb", extended: true }));
+
+/**
+ * Compression middleware for response gzip
+ */
+app.use(compression());
+
+/**
+ * Rate limiting for login endpoint
+ * 10 attempts per 15 minutes per IP
+ */
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 attempts
+  message: "Terlalu banyak percobaan login. Coba lagi dalam 15 menit.",
+  standardHeaders: true, // Return rate limit info in the RateLimit-* headers
+  legacyHeaders: false, // Disable the X-RateLimit-* headers
+  keyGenerator: (req) => ipKeyGenerator(req.ip || ""), // Use client IP for rate limiting with IPv6 support
+});
+
+/**
+ * Rate limiting for API endpoints
+ * 20 requests per second per IP (1200 per minute)
+ */
+const apiLimiter = rateLimit({
+  windowMs: 1 * 1000, // 1 second window
+  max: 20, // 20 requests per second
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip || ""),
+});
+
+/**
+ * Request timeout middleware
+ * Set 30 second timeout for all requests
+ */
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setTimeout(30 * 1000, () => {
+    res.status(408).json({
+      success: false,
+      error: "Request timeout",
+      error_code: "REQUEST_TIMEOUT",
+    });
+  });
   next();
 });
 
-// Request logging middleware
+/**
+ * Request logging middleware
+ * Logs method, path, status code, and duration
+ */
 app.use((req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
   res.on("finish", () => {
@@ -52,49 +162,100 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Health check
+/**
+ * Audit logging middleware
+ * Logs security-relevant events (unauthorized access, rate limits, state changes)
+ */
+app.use(auditLoggingMiddleware);
+
+/**
+ * Health check endpoint - minimal data, no auth required
+ */
 app.get("/health", (_req: Request, res: Response) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({ status: "ok" });
 });
 
-// Auth Routes (Public)
+/**
+ * Auth Routes - Public access with login rate limiting
+ * Only POST /api/auth/login is rate limited
+ * This middleware will check the path and method
+ */
+app.use("/api/auth", (req: Request, res: Response, next: NextFunction) => {
+  // Apply rate limiter only to POST /api/auth/login
+  if (req.method === "POST" && req.path === "/login") {
+    return loginLimiter(req, res, next);
+  }
+  next();
+});
 app.use("/api/auth", authRoutes);
 
-// Protected API Routes
-app.use("/api/attendance", validateToken, attendanceRoutes);
-app.use("/api/classes", validateToken, classesRoutes);
-app.use("/api/admin", validateToken, adminRoutes);
+/**
+ * Protected API Routes
+ * All routes require valid JWT token and rate limiting (20 req/sec per IP)
+ */
+app.use("/api/attendance", validateToken, apiLimiter, attendanceRoutes);
+app.use("/api/classes", validateToken, apiLimiter, classesRoutes);
+app.use("/api/admin", validateToken, apiLimiter, adminRoutes);
 
-// Serve static files dari Vite build (in production)
+/**
+ * Static file serving from Vite build output
+ * Serves compiled frontend in production
+ */
 const publicDir = join(__dirname, "../public");
 app.use(express.static(publicDir));
 
-// SPA fallback - serve index.html untuk semua route yang tidak match
+/**
+ * SPA fallback route
+ * Serves index.html for unmatched routes (client-side routing)
+ */
 app.get("*", (_req: Request, res: Response) => {
   const indexPath = join(publicDir, "index.html");
-  res.sendFile(indexPath, (err) => {
+  res.sendFile(indexPath, (err: any) => {
     if (err) {
       logger.error("Error sending index.html", err);
-      res.status(500).send("Error loading application");
+      res.status(500).json({
+        success: false,
+        error: "Error loading application",
+        error_code: "APP_LOAD_ERROR",
+      });
     }
   });
 });
 
-// Error handling middleware
+/**
+ * Global error handling middleware
+ * Catches and formats all errors
+ * Filters sensitive information in production
+ */
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  logger.error("Request error", {
-    method: err.method,
-    path: err.path,
-    error: err.message,
-    status: err.status || 500,
-  });
-
-  const status = err.status || 500;
+  const status = err.status || err.statusCode || 500;
   const errorCode = err.code || "INTERNAL_SERVER_ERROR";
+  let error_message = err.message || "Internal Server Error";
+
+  /**
+   * Filter error messages in production
+   * Prevent leaking sensitive system information
+   */
+  if (env.NODE_ENV === "production") {
+    if (status === 500) {
+      error_message = "Internal Server Error";
+    }
+    logger.error("Request error", {
+      status,
+      error: err.message,
+      stack: err.stack,
+    });
+  } else {
+    logger.error("Request error", {
+      status,
+      error: err.message,
+      stack: err.stack,
+    });
+  }
 
   res.status(status).json({
     success: false,
-    error: err.message || "Internal Server Error",
+    error: error_message,
     error_code: errorCode,
     ...(env.NODE_ENV === "development" && { details: err.stack }),
   });

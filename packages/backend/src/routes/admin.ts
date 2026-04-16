@@ -1,6 +1,7 @@
 /**
  * Admin Routes
  * Management endpoints for archive operations and system monitoring
+ * All routes require valid JWT token (validateToken middleware applied in app.ts)
  */
 
 import { Router, Request, Response, NextFunction } from "express";
@@ -14,19 +15,9 @@ const router: ExpressRouter = Router();
 const logger = createLogger("AdminRoutes");
 
 /**
- * GET /api/admin/health
- * Simple health check (no auth required for monitoring)
- */
-router.get("/health", (req: Request, res: Response) => {
-  res.json({
-    status: "ok",
-    timestamp: new Date().toISOString(),
-  });
-});
-
-/**
  * GET /api/admin/archive/status
  * Get current archive status and statistics
+ * Requires: Valid JWT token
  * Returns: active records count, archive records count, health status
  */
 router.get(
@@ -52,7 +43,7 @@ router.get(
         error_code: "ARCHIVE_STATUS_FAILED",
       });
     }
-  }
+  },
 );
 
 /**
@@ -86,7 +77,7 @@ router.post(
         error_code: "ARCHIVE_FAILED",
       });
     }
-  }
+  },
 );
 
 /**
@@ -116,7 +107,7 @@ router.get(
         error_code: "ARCHIVE_HISTORY_FAILED",
       });
     }
-  }
+  },
 );
 
 /**
@@ -155,7 +146,7 @@ router.get(
         error_code: "STATS_FAILED",
       });
     }
-  }
+  },
 );
 
 export default router;
