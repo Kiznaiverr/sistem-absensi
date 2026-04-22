@@ -106,6 +106,41 @@ export class Logger {
   }
 
   /**
+   * Get color for HTTP method
+   */
+  private getColorForMethod(method: string): string {
+    switch (method.toUpperCase()) {
+      case "GET":
+        return COLORS.GREEN; // Read operation
+      case "POST":
+        return COLORS.CYAN; // Create operation
+      case "PUT":
+        return COLORS.YELLOW; // Full update
+      case "DELETE":
+        return COLORS.RED; // Delete operation
+      case "PATCH":
+        return COLORS.BLUE; // Partial update
+      case "OPTIONS":
+        return COLORS.GRAY; // Metadata
+      default:
+        return COLORS.WHITE;
+    }
+  }
+
+  /**
+   * Get color for HTTP response time (duration)
+   */
+  private getColorForDuration(durationStr: string): string {
+    // Parse duration string "123ms" to number
+    const duration = parseInt(durationStr, 10);
+
+    if (duration < 100) return COLORS.GREEN; // Fast
+    if (duration < 300) return COLORS.CYAN; // Normal
+    if (duration < 1000) return COLORS.YELLOW; // Slow
+    return COLORS.RED; // Very slow
+  }
+
+  /**
    * Format HTTP log message (simplified)
    */
   private formatHTTP(
@@ -115,9 +150,11 @@ export class Logger {
     duration: string,
   ): string {
     const timestamp = this.getShortTimestamp();
+    const methodColor = this.getColorForMethod(method);
     const statusColor = this.getColorForStatusCode(status);
+    const durationColor = this.getColorForDuration(duration);
 
-    return `${COLORS.DIM}[${timestamp}]${COLORS.RESET} ${COLORS.WHITE}[HTTP]${COLORS.RESET} ${COLORS.WHITE}[${method} ${pathname}]${COLORS.RESET} ${statusColor}${status}${COLORS.RESET} ${COLORS.DIM}(${duration})${COLORS.RESET}`;
+    return `${COLORS.DIM}[${timestamp}]${COLORS.RESET} ${COLORS.WHITE}[HTTP]${COLORS.RESET} ${methodColor}[${method}${COLORS.RESET} ${COLORS.WHITE}${pathname}]${COLORS.RESET} ${statusColor}${status}${COLORS.RESET} ${durationColor}(${duration})${COLORS.RESET}`;
   }
 
   debug(message: string, data?: any): void {
@@ -156,6 +193,7 @@ export class Logger {
   /**
    * Log HTTP request/response
    * Simplified format: [timestamp] [HTTP] [METHOD /path] status (duration)
+   * Console only (no file writing)
    */
   http(
     method: string,
@@ -165,21 +203,6 @@ export class Logger {
   ): void {
     const message = this.formatHTTP(method, pathname, status, duration);
     console.log(message);
-
-    // Write to http.log file
-    try {
-      const logDir = path.join(process.cwd(), "logs");
-      const logFile = path.join(logDir, "http.log");
-
-      if (!fs.existsSync(logDir)) {
-        fs.mkdirSync(logDir, { recursive: true });
-      }
-
-      const cleanMessage = message.replace(/\x1b\[[0-9;]*m/g, "");
-      fs.appendFileSync(logFile, cleanMessage + "\n");
-    } catch {
-      // Silently fail if we can't write to file
-    }
   }
 
   /**
@@ -194,9 +217,11 @@ export class Logger {
     error?: any,
   ): void {
     const timestamp = this.getShortTimestamp();
+    const methodColor = this.getColorForMethod(method);
     const statusColor = this.getColorForStatusCode(status);
+    const durationColor = this.getColorForDuration(duration);
 
-    const message = `${COLORS.DIM}[${timestamp}]${COLORS.RESET} ${COLORS.WHITE}[HTTP_ERROR]${COLORS.RESET} ${COLORS.WHITE}[${method} ${pathname}]${COLORS.RESET} ${statusColor}${status}${COLORS.RESET} ${COLORS.DIM}(${duration})${COLORS.RESET}`;
+    const message = `${COLORS.DIM}[${timestamp}]${COLORS.RESET} ${COLORS.WHITE}[HTTP_ERROR]${COLORS.RESET} ${methodColor}[${method}${COLORS.RESET} ${COLORS.WHITE}${pathname}]${COLORS.RESET} ${statusColor}${status}${COLORS.RESET} ${durationColor}(${duration})${COLORS.RESET}`;
     console.error(message);
 
     // Write detailed error to error.log

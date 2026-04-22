@@ -1,10 +1,9 @@
 /**
  * Audit Logging Service
  * Tracks security events and user actions with comprehensive context
+ * Logs to console only (no file writing)
  */
 
-import fs from "fs";
-import path from "path";
 import { createLogger } from "./logger.js";
 
 const logger = createLogger("AuditService");
@@ -43,12 +42,9 @@ export interface AuditEvent {
 }
 
 export class AuditService {
-  private static readonly AUDIT_LOG_DIR = "logs";
-  private static readonly AUDIT_LOG_FILE = "audit.log";
-
   /**
    * Log a security event
-   * Writes to both console and persistent audit log
+   * Logs to console for real-time monitoring
    */
   static async logEvent(event: AuditEvent): Promise<void> {
     try {
@@ -59,8 +55,6 @@ export class AuditService {
         event.timestamp = new Date().toISOString();
       }
 
-      const auditLogEntry = JSON.stringify(event);
-
       /**
        * Log to console for real-time monitoring
        */
@@ -69,11 +63,6 @@ export class AuditService {
         eventType: event.eventType,
         ip: event.ip_address,
       });
-
-      /**
-       * Write to persistent audit log file
-       */
-      this.writeToAuditLog(auditLogEntry);
     } catch (error) {
       logger.error("Failed to log audit event", error);
     }
@@ -260,81 +249,13 @@ export class AuditService {
     details: Record<string, any>,
   ): Promise<void> {
     try {
-      const auditLogEntry = JSON.stringify({
-        timestamp: new Date().toISOString(),
-        eventType,
-        ...details,
-      });
-
       /**
        * Log to console for real-time monitoring
        */
       const logMessage = `[${eventType}] ${details.admin_email || details.ip || "unknown"}`;
       logger.info(logMessage, { eventType, ...details });
-
-      /**
-       * Write to persistent audit log file
-       */
-      this.writeToAuditLog(auditLogEntry);
     } catch (error) {
       logger.error("Failed to log custom audit event", error);
-    }
-  }
-
-  /**
-   * Write audit log entry to file
-   * Handles directory creation and file appending
-   */
-  private static writeToAuditLog(entry: string): void {
-    try {
-      const logDir = path.join(process.cwd(), this.AUDIT_LOG_DIR);
-      const logFile = path.join(logDir, this.AUDIT_LOG_FILE);
-
-      /**
-       * Create logs directory if it doesn't exist
-       */
-      if (!fs.existsSync(logDir)) {
-        fs.mkdirSync(logDir, { recursive: true });
-      }
-
-      /**
-       * Append entry to audit log
-       */
-      fs.appendFileSync(logFile, entry + "\n");
-    } catch (error) {
-      /**
-       * Log to stderr if file write fails
-       * Do not throw to prevent audit logging from crashing app
-       */
-      if (process.env.NODE_ENV === "development") {
-        console.error("Failed to write to audit.log", error);
-      }
-    }
-  }
-
-  /**
-   * Get recent audit events from log file
-   * Parse JSON lines from audit log
-   */
-  static async getRecentEvents(limit: number = 100): Promise<AuditEvent[]> {
-    try {
-      const logDir = path.join(process.cwd(), this.AUDIT_LOG_DIR);
-      const logFile = path.join(logDir, this.AUDIT_LOG_FILE);
-
-      if (!fs.existsSync(logFile)) {
-        return [];
-      }
-
-      const content = fs.readFileSync(logFile, "utf-8");
-      const lines = content
-        .split("\n")
-        .filter((line) => line.trim())
-        .slice(-limit);
-
-      return lines.map((line) => JSON.parse(line) as AuditEvent);
-    } catch (error) {
-      logger.error("Failed to read audit events", error);
-      return [];
     }
   }
 }
