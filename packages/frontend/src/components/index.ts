@@ -24,3 +24,7 @@ export {
 
 // RFID Form
 export { RFIDFormComponent } from "./rfid-form";
+
+// Santri Management
+export { SantriPage } from "./santri/SantriPage";
+export type { Santri, Class } from "./santri/SantriPage";

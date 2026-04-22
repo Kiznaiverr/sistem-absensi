@@ -252,6 +252,36 @@ export class AuditService {
   }
 
   /**
+   * Generic log method for custom audit events
+   * Allows logging of admin actions (santri management, etc)
+   */
+  static async log(
+    eventType: string,
+    details: Record<string, any>,
+  ): Promise<void> {
+    try {
+      const auditLogEntry = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        eventType,
+        ...details,
+      });
+
+      /**
+       * Log to console for real-time monitoring
+       */
+      const logMessage = `[${eventType}] ${details.admin_email || details.ip || "unknown"}`;
+      logger.info(logMessage, { eventType, ...details });
+
+      /**
+       * Write to persistent audit log file
+       */
+      this.writeToAuditLog(auditLogEntry);
+    } catch (error) {
+      logger.error("Failed to log custom audit event", error);
+    }
+  }
+
+  /**
    * Write audit log entry to file
    * Handles directory creation and file appending
    */

@@ -9,6 +9,7 @@ import {
   initializeHeader,
   renderAttendanceStats,
   renderLayout,
+  SantriPage,
 } from "./components";
 import { LoginPageComponent } from "./components/auth/LoginPage";
 import { ExportPageComponent } from "./components/export/ExportPage";
@@ -17,8 +18,22 @@ import type { HeaderComponent } from "./components/layout/Header";
 let rfidFormComponent: RFIDFormComponent | null = null;
 let headerComponent: HeaderComponent | null = null;
 let exportPageComponent: ExportPageComponent | null = null;
-let currentPage: "home" | "export" = "home";
+let santriPage: SantriPage | null = null;
+let currentPage: "home" | "export" | "santri" = "home";
 let isAuthenticated = false;
+
+/**
+ * Setup global event listeners
+ */
+function setupGlobalEventListeners(): void {
+  window.addEventListener("navigateToPage", (event: any) => {
+    const page = event.detail?.page;
+    if (page === "home" || page === "export" || page === "santri") {
+      currentPage = page;
+      renderApp();
+    }
+  });
+}
 
 /**
  * Main application initialization
@@ -26,6 +41,9 @@ let isAuthenticated = false;
 async function initializeApp() {
   // Check authentication status
   isAuthenticated = AuthService.isAuthenticated();
+
+  // Setup global event listeners
+  setupGlobalEventListeners();
 
   if (!isAuthenticated) {
     showLoginPage();
@@ -117,25 +135,10 @@ function renderApp(): void {
   const app = document.getElementById("app");
   if (!app) return;
 
-  // Build top navigation
-  const navigation = `
-    <div class="bg-white border-b border-cream-200 shadow-sm">
-      <div class="max-w-7xl mx-auto px-6 py-3 flex items-center gap-4">
-        <h1 class="text-xl font-bold text-gray-900 flex-1">Absensi Santri</h1>
-        <div class="flex gap-2 items-center">
-          <button id="nav-home" class="px-4 py-2 ${currentPage === "home" ? "bg-peach-500 text-white" : "bg-gray-100 text-gray-700"} rounded-md font-medium transition hover:opacity-90">
-            Home
-          </button>
-          <button id="nav-export" class="px-4 py-2 ${currentPage === "export" ? "bg-peach-500 text-white" : "bg-gray-100 text-gray-700"} rounded-md font-medium transition hover:opacity-90">
-            Export Data
-          </button>
-          <button id="btn-logout" class="px-4 py-2 bg-red-100 text-red-700 rounded-md font-medium transition hover:bg-red-200">
-            Logout
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
+  // Render unified header
+  const headerHtml = renderHeader({
+    currentPage,
+  });
 
   // Render different pages based on currentPage
   let pageContent = "";
@@ -144,29 +147,40 @@ function renderApp(): void {
     pageContent = renderHomePage();
   } else if (currentPage === "export") {
     pageContent = `<div id="export-page-container" style="min-height: 100vh;"></div>`;
+  } else if (currentPage === "santri") {
+    pageContent = `<div id="santri-page-container" style="min-height: 100vh;"></div>`;
   }
 
-  app.innerHTML = navigation + pageContent;
+  app.innerHTML = headerHtml + pageContent;
 
-  // Setup navigation listeners
-  document.getElementById("nav-home")?.addEventListener("click", () => {
-    currentPage = "home";
-    renderApp();
-  });
-
-  document.getElementById("nav-export")?.addEventListener("click", () => {
-    currentPage = "export";
-    renderApp();
-    // Initialize export page after rendering
-    setTimeout(() => {
-      exportPageComponent = new ExportPageComponent("export-page-container");
-      exportPageComponent.init();
-    }, 0);
-  });
-
-  // Logout button
-  document.getElementById("btn-logout")?.addEventListener("click", () => {
-    handleLogout();
+  // Initialize header with navigation callbacks (AFTER rendering content)
+  headerComponent = initializeHeader({
+    currentPage,
+    onHomeClick: () => {
+      currentPage = "home";
+      renderApp();
+    },
+    onExportClick: () => {
+      currentPage = "export";
+      renderApp();
+      // Initialize export page after rendering
+      setTimeout(() => {
+        exportPageComponent = new ExportPageComponent("export-page-container");
+        exportPageComponent.init();
+      }, 0);
+    },
+    onSantriClick: () => {
+      currentPage = "santri";
+      renderApp();
+      // Initialize santri page after rendering
+      setTimeout(() => {
+        santriPage = new SantriPage("santri-page-container");
+        santriPage.init();
+      }, 0);
+    },
+    onLogoutClick: () => {
+      handleLogout();
+    },
   });
 
   // Setup based on current page
@@ -176,9 +190,6 @@ function renderApp(): void {
 
     // Initialize sidebar content
     initializeSidebar();
-
-    // Initialize header with real-time updates
-    headerComponent = initializeHeader();
 
     // Initialize RFID form
     rfidFormComponent = new RFIDFormComponent({
@@ -229,10 +240,9 @@ function handleAuthError(message: string): void {
 }
 
 /**
- * Render home page content
+ * Render home page content (without header - unified header handled in renderApp)
  */
 function renderHomePage(): string {
-  const headerHtml = renderHeader();
   const stats = renderAttendanceStats();
 
   // Sidebar placeholder (will be populated by initializeSidebar)
@@ -246,9 +256,8 @@ function renderHomePage(): string {
     </div>
   `;
 
-  // Create layout with header included
+  // Create layout without header (unified header in renderApp)
   return renderLayout({
-    header: headerHtml,
     stats,
     mainContent,
     sidebar,

@@ -4,7 +4,7 @@
  */
 
 export interface LayoutProps {
-  header: string;
+  header?: string;
   stats: string;
   mainContent: string;
   sidebar?: string;
@@ -21,7 +21,7 @@ export class LayoutComponent {
     return `
       <div class="app-container">
         <div class="app-wrapper">
-          ${this.props.header}
+          ${this.props.header || ""}
           
           ${this.props.stats}
           

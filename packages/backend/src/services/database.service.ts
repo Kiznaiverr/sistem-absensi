@@ -618,4 +618,200 @@ export class DatabaseService {
       throw error;
     }
   }
+
+  /**
+   * Create new santri
+   */
+  static async createSantri(
+    name: string,
+    rfidId: string,
+    classId: string,
+  ): Promise<Santri> {
+    try {
+      const { data, error } = await supabaseClient
+        .from("santri")
+        .insert({
+          name,
+          rfid_id: rfidId,
+          class_id: classId,
+          is_active: true,
+        })
+        .select("*, classes(*)")
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      logger.error("Failed to create santri", { name, rfidId, classId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get all santri with optional filters
+   */
+  static async getAllSantri(filters?: {
+    classId?: string;
+    isActive?: boolean;
+    search?: string;
+  }): Promise<Santri[]> {
+    try {
+      let query = supabaseClient
+        .from("santri")
+        .select("*, classes(*)")
+        .order("name", { ascending: true });
+
+      if (filters?.classId) {
+        query = query.eq("class_id", filters.classId);
+      }
+
+      if (filters?.isActive !== undefined) {
+        query = query.eq("is_active", filters.isActive);
+      }
+
+      // Search by name or RFID
+      if (filters?.search) {
+        query = query.or(
+          `name.ilike.%${filters.search}%,rfid_id.ilike.%${filters.search}%`,
+        );
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      logger.error("Failed to get all santri", { filters, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get santri by ID
+   */
+  static async getSantriById(santriId: string): Promise<Santri | null> {
+    try {
+      const { data, error } = await supabaseClient
+        .from("santri")
+        .select("*, classes(*)")
+        .eq("id", santriId)
+        .single();
+
+      if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
+      return data || null;
+    } catch (error) {
+      logger.error("Failed to get santri by ID", { santriId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Update santri
+   */
+  static async updateSantri(
+    santriId: string,
+    updates: {
+      name?: string;
+      classId?: string;
+      isActive?: boolean;
+    },
+  ): Promise<Santri> {
+    try {
+      const updateData: any = {};
+
+      if (updates.name) updateData.name = updates.name;
+      if (updates.classId) updateData.class_id = updates.classId;
+      if (updates.isActive !== undefined)
+        updateData.is_active = updates.isActive;
+
+      const { data, error } = await supabaseClient
+        .from("santri")
+        .update(updateData)
+        .eq("id", santriId)
+        .select("*, classes(*)")
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      logger.error("Failed to update santri", { santriId, updates, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Update santri RFID
+   * Special method to handle RFID updates with validation
+   */
+  static async updateSantriRFID(
+    santriId: string,
+    newRfidId: string,
+  ): Promise<Santri> {
+    try {
+      const { data, error } = await supabaseClient
+        .from("santri")
+        .update({ rfid_id: newRfidId })
+        .eq("id", santriId)
+        .select("*, classes(*)")
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      logger.error("Failed to update santri RFID", {
+        santriId,
+        newRfidId,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Soft delete santri
+   * Sets is_active = false instead of hard delete
+   */
+  static async deleteSantri(santriId: string): Promise<Santri> {
+    try {
+      const { data, error } = await supabaseClient
+        .from("santri")
+        .update({ is_active: false })
+        .eq("id", santriId)
+        .select("*, classes(*)")
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      logger.error("Failed to delete santri", { santriId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Check if RFID already exists (for validation)
+   */
+  static async checkRFIDExists(
+    rfidId: string,
+    excludeSantriId?: string,
+  ): Promise<boolean> {
+    try {
+      let query = supabaseClient
+        .from("santri")
+        .select("id")
+        .eq("rfid_id", rfidId);
+
+      if (excludeSantriId) {
+        query = query.neq("id", excludeSantriId);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      return (data?.length || 0) > 0;
+    } catch (error) {
+      logger.error("Failed to check RFID exists", { rfidId, error });
+      throw error;
+    }
+  }
 }

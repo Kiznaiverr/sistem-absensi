@@ -107,3 +107,69 @@ export const validateRFIDFormat = (rfid: string): boolean => {
   const rfidRegex = /^[a-zA-Z0-9-]{1,255}$/;
   return rfidRegex.test(rfid);
 };
+
+/**
+ * Validate create santri request
+ * Checks name, RFID ID, and class ID
+ */
+export const validateCreateSantri = [
+  body("name")
+    .trim()
+    .notEmpty()
+    .withMessage("Name is required")
+    .isLength({ min: 3, max: 255 })
+    .withMessage("Name must be between 3 and 255 characters"),
+  body("rfid_id")
+    .trim()
+    .notEmpty()
+    .withMessage("RFID ID is required")
+    .isLength({ min: 1, max: 255 })
+    .withMessage("RFID ID must be between 1 and 255 characters"),
+  body("class_id")
+    .trim()
+    .notEmpty()
+    .withMessage("Class ID is required")
+    .custom((value) => {
+      if (!validateUUID(value)) {
+        throw new Error("Class ID must be a valid UUID");
+      }
+      return true;
+    }),
+];
+
+/**
+ * Validate update santri request
+ * All fields optional, but validates format if provided
+ */
+export const validateUpdateSantri = [
+  body("name")
+    .optional()
+    .trim()
+    .isLength({ min: 3, max: 255 })
+    .withMessage("Name must be between 3 and 255 characters"),
+  body("class_id")
+    .optional()
+    .trim()
+    .custom((value) => {
+      if (!validateUUID(value)) {
+        throw new Error("Class ID must be a valid UUID");
+      }
+      return true;
+    }),
+  body("is_active")
+    .optional()
+    .isBoolean()
+    .withMessage("is_active must be a boolean"),
+];
+
+/**
+ * Validate update santri RFID request
+ */
+export const validateUpdateRFID = [
+  body("rfid_id")
+    .trim()
+    .notEmpty()
+    .withMessage("RFID ID is required")
+    .isLength({ min: 1, max: 255 })
+    .withMessage("RFID ID must be between 1 and 255 characters"),
+];

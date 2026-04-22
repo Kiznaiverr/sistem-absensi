@@ -27,7 +27,7 @@ export class ApiService {
    * - Retry after refresh
    */
   private static async request<T>(
-    method: "GET" | "POST" | "PUT" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     path: string,
     body?: any,
   ): Promise<T> {
@@ -212,6 +212,104 @@ export class ApiService {
     const response = await this.request<ApiResponse>(
       "POST",
       "/classes/init-cache",
+    );
+    return response.data;
+  }
+
+  // ===== SANTRI MANAGEMENT ENDPOINTS =====
+
+  /**
+   * GET /api/santri
+   * Get all santri with optional filters
+   */
+  static async getAllSantri(filters?: {
+    class_id?: string;
+    search?: string;
+    is_active?: boolean;
+  }): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (filters?.class_id) params.append("class_id", filters.class_id);
+    if (filters?.search) params.append("search", filters.search);
+    if (filters?.is_active !== undefined)
+      params.append("is_active", filters.is_active.toString());
+
+    const queryStr = params.toString();
+    const response = await this.request<ApiResponse>(
+      "GET",
+      `/santri${queryStr ? "?" + queryStr : ""}`,
+    );
+    return response.data || [];
+  }
+
+  /**
+   * POST /api/santri
+   * Create new santri
+   */
+  static async createSantri(data: {
+    name: string;
+    rfid_id: string;
+    class_id: string;
+  }): Promise<any> {
+    const response = await this.request<ApiResponse>("POST", "/santri", data);
+    return response.data;
+  }
+
+  /**
+   * GET /api/santri/:santriId
+   * Get single santri by ID
+   */
+  static async getSantriById(santriId: string): Promise<any> {
+    const response = await this.request<ApiResponse>(
+      "GET",
+      `/santri/${santriId}`,
+    );
+    return response.data;
+  }
+
+  /**
+   * PUT /api/santri/:santriId
+   * Update santri (name, class, status)
+   */
+  static async updateSantri(
+    santriId: string,
+    data: {
+      name?: string;
+      class_id?: string;
+      is_active?: boolean;
+    },
+  ): Promise<any> {
+    const response = await this.request<ApiResponse>(
+      "PUT",
+      `/santri/${santriId}`,
+      data,
+    );
+    return response.data;
+  }
+
+  /**
+   * PATCH /api/santri/:santriId/rfid
+   * Update RFID only
+   */
+  static async updateSantriRFID(
+    santriId: string,
+    rfidId: string,
+  ): Promise<any> {
+    const response = await this.request<ApiResponse>(
+      "PATCH",
+      `/santri/${santriId}/rfid`,
+      { rfid_id: rfidId },
+    );
+    return response.data;
+  }
+
+  /**
+   * DELETE /api/santri/:santriId
+   * Soft delete santri
+   */
+  static async deleteSantri(santriId: string): Promise<any> {
+    const response = await this.request<ApiResponse>(
+      "DELETE",
+      `/santri/${santriId}`,
     );
     return response.data;
   }

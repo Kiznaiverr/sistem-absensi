@@ -13,6 +13,7 @@ import { enforceHttps } from "./middleware/https.middleware.js";
 import attendanceRoutes from "./routes/attendance.js";
 import classesRoutes from "./routes/classes.js";
 import adminRoutes from "./routes/admin.js";
+import santriRoutes from "./routes/santri.js";
 import authRoutes from "./routes/auth.js";
 import { validateToken } from "./middleware/auth.middleware.js";
 import { auditLoggingMiddleware } from "./middleware/audit-logging.middleware.js";
@@ -195,6 +196,7 @@ app.use("/api/auth", authRoutes);
  */
 app.use("/api/attendance", validateToken, apiLimiter, attendanceRoutes);
 app.use("/api/classes", validateToken, apiLimiter, classesRoutes);
+app.use("/api/santri", validateToken, apiLimiter, santriRoutes);
 app.use("/api/admin", validateToken, apiLimiter, adminRoutes);
 
 /**
