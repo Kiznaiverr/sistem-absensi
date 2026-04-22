@@ -10,6 +10,7 @@ import env from "./config/env.js";
 import { createLogger, initializeErrorLogging } from "./utils/logger.js";
 import { AttendanceService } from "./services/attendance.service.js";
 import { enforceHttps } from "./middleware/https.middleware.js";
+import { httpLoggingMiddleware } from "./middleware/http-logging.middleware.js";
 import attendanceRoutes from "./routes/attendance.js";
 import classesRoutes from "./routes/classes.js";
 import adminRoutes from "./routes/admin.js";
@@ -148,20 +149,11 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
 });
 
 /**
- * Request logging middleware
- * Logs method, path, status code, and duration
+ * HTTP request/response logging middleware
+ * Logs simplified format: [TIME] [HTTP] [METHOD /path] STATUS (duration)
+ * Full details only on error responses
  */
-app.use((req: Request, res: Response, next: NextFunction) => {
-  const start = Date.now();
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    logger.info(`${req.method} ${req.path}`, {
-      status: res.statusCode,
-      duration: `${duration}ms`,
-    });
-  });
-  next();
-});
+app.use(httpLoggingMiddleware);
 
 /**
  * Audit logging middleware

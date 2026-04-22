@@ -29,12 +29,7 @@ async function startServer() {
     logger.info("Application initialization complete");
 
     app.listen(PORT, HOST, () => {
-      logger.info("Server started successfully", {
-        backend: `http://${HOST}:${PORT}`,
-        environment: env.NODE_ENV.toUpperCase(),
-        cache: env.CACHE_ENABLED ? "ENABLED" : "DISABLED",
-        timezone: env.TIMEZONE,
-      });
+      logger.info("Server started successfully");
     });
   } catch (error) {
     logger.error("Failed to start server", error);
