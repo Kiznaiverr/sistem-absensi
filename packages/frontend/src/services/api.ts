@@ -21,6 +21,10 @@ interface ApiResponse<T = any> {
 export class ApiService {
   /**
    * Make HTTP request with authentication
+   * AuthService.fetch automatically handles:
+   * - Including HttpOnly cookies (credentials: 'include')
+   * - Auto-refresh on 401 (token expired)
+   * - Retry after refresh
    */
   private static async request<T>(
     method: "GET" | "POST" | "PUT" | "DELETE",
@@ -49,12 +53,14 @@ export class ApiService {
 
       return response.json();
     } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message === "No authentication token"
-      ) {
-        // Token missing, redirect to login
-        window.location.href = "/";
+      if (error instanceof Error) {
+        // Handle 401/403 - redirect to login for re-authentication
+        if (
+          error.message.includes("Unauthorized") ||
+          error.message.includes("Forbidden")
+        ) {
+          window.location.href = "/";
+        }
       }
       throw error;
     }

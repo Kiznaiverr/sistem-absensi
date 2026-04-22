@@ -1,65 +1,53 @@
 /**
  * Auth Service - Frontend
- * Manages authentication tokens and user session
+ * Manages authentication tokens and user session using HttpOnly cookies
+ *
+ * Security notes:
+ * - Access tokens stored in HttpOnly cookies (cannot be accessed via JavaScript)
+ * - Refresh tokens stored in HttpOnly cookies (Secure, SameSite=Strict)
+ * - Admin data stored in sessionStorage (cleared on tab close, XSS mitigation)
+ * - No tokens exposed to localStorage (XSS vulnerability prevention)
+ * - Browser automatically sends cookies with each request (credentials: 'include')
  */
 
 export class AuthService {
-  private static readonly TOKEN_KEY = "access_token";
-  private static readonly REFRESH_TOKEN_KEY = "refresh_token";
   private static readonly ADMIN_KEY = "admin_data";
   private static refreshTokenTimeout: ReturnType<typeof setTimeout> | null =
     null;
   private static isRefreshing = false; // Prevent concurrent refresh attempts
 
   /**
-   * Save tokens to localStorage
+   * Save admin data to sessionStorage
+   * SessionStorage is cleared when tab closes (more secure than localStorage)
+   * Tokens remain in HttpOnly cookies (backend manages via Set-Cookie)
    */
-  static saveTokens(
-    accessToken: string,
-    refreshToken: string,
-    admin: any,
-  ): void {
-    localStorage.setItem(this.TOKEN_KEY, accessToken);
-    localStorage.setItem(this.REFRESH_TOKEN_KEY, refreshToken);
-    localStorage.setItem(this.ADMIN_KEY, JSON.stringify(admin));
+  static saveAdmin(admin: any): void {
+    sessionStorage.setItem(this.ADMIN_KEY, JSON.stringify(admin));
   }
 
   /**
-   * Get access token from localStorage
-   */
-  static getAccessToken(): string | null {
-    return localStorage.getItem(this.TOKEN_KEY);
-  }
-
-  /**
-   * Get refresh token from localStorage
-   */
-  static getRefreshToken(): string | null {
-    return localStorage.getItem(this.REFRESH_TOKEN_KEY);
-  }
-
-  /**
-   * Get admin data from localStorage
+   * Get admin data from sessionStorage
+   * Returns null if no admin data (user not logged in)
    */
   static getAdmin(): any {
-    const adminData = localStorage.getItem(this.ADMIN_KEY);
+    const adminData = sessionStorage.getItem(this.ADMIN_KEY);
     return adminData ? JSON.parse(adminData) : null;
   }
 
   /**
    * Check if user is authenticated
+   * HttpOnly cookies are automatically sent by browser, so we just check admin data
    */
   static isAuthenticated(): boolean {
-    return !!this.getAccessToken();
+    return !!this.getAdmin();
   }
 
   /**
-   * Clear all auth data
+   * Clear all auth data (admin info + auth state)
+   * HttpOnly cookies are cleared by backend via Set-Cookie with maxAge=0
    */
   static clearAuth(): void {
-    localStorage.removeItem(this.TOKEN_KEY);
-    localStorage.removeItem(this.REFRESH_TOKEN_KEY);
-    localStorage.removeItem(this.ADMIN_KEY);
+    sessionStorage.removeItem(this.ADMIN_KEY);
     this.isRefreshing = false; // Reset refresh flag
 
     if (this.refreshTokenTimeout) {
@@ -70,54 +58,48 @@ export class AuthService {
 
   /**
    * Refresh access token
+   * Backend will set new access_token in HttpOnly cookie automatically
+   * We only need to call the endpoint; browser handles cookie management
    */
-  static async refreshAccessToken(): Promise<string | null> {
+  static async refreshAccessToken(): Promise<boolean> {
     // Prevent concurrent refresh attempts
     if (this.isRefreshing) {
-      return null;
+      return false;
     }
 
     try {
       this.isRefreshing = true;
-      const refreshToken = this.getRefreshToken();
-      if (!refreshToken) {
-        this.clearAuth();
-        return null;
-      }
 
+      // Call refresh endpoint - backend will set new access_token cookie
       const response = await fetch("/api/auth/refresh", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ refresh_token: refreshToken }),
+        credentials: "include", // Include cookies with request
       });
 
       if (!response.ok) {
         this.clearAuth();
-        return null;
+        return false;
       }
 
       const data = await response.json();
-      const newAccessToken = data.data?.access_token;
       const expiresIn = data.data?.expires_in;
 
-      if (!newAccessToken || !expiresIn) {
+      if (!expiresIn) {
         this.clearAuth();
-        return null;
+        return false;
       }
-
-      // Save new token
-      localStorage.setItem(this.TOKEN_KEY, newAccessToken);
 
       // Schedule next refresh (before expiry)
       this.scheduleTokenRefresh(expiresIn);
 
-      return newAccessToken;
+      return true;
     } catch (error) {
       console.error("Failed to refresh token:", error);
       this.clearAuth();
-      return null;
+      return false;
     } finally {
       this.isRefreshing = false;
     }
@@ -142,30 +124,27 @@ export class AuthService {
 
   /**
    * Make authenticated API request
+   * Browser automatically includes HttpOnly cookies via credentials: 'include'
+   * No need to manually add Authorization header
    */
   static async fetch(
     url: string,
     options: RequestInit = {},
   ): Promise<Response> {
-    const token = this.getAccessToken();
-
-    if (!token) {
-      throw new Error("No authentication token");
-    }
-
-    const headers = {
-      ...options.headers,
-      Authorization: `Bearer ${token}`,
+    // Ensure credentials are included (for HttpOnly cookies)
+    const fetchOptions: RequestInit = {
+      ...options,
+      credentials: "include",
     };
 
-    let response = await fetch(url, { ...options, headers });
+    let response = await fetch(url, fetchOptions);
 
     // If 401 and not already refreshing, try to refresh token once
     if (response.status === 401 && !this.isRefreshing) {
-      const newToken = await this.refreshAccessToken();
-      if (newToken) {
-        headers.Authorization = `Bearer ${newToken}`;
-        response = await fetch(url, { ...options, headers });
+      const refreshed = await this.refreshAccessToken();
+      if (refreshed) {
+        // Retry request after token refresh
+        response = await fetch(url, fetchOptions);
       }
     }
 

@@ -57,13 +57,16 @@ function showLoginPage(): void {
 
 /**
  * Handle successful login
+ * Backend sets HttpOnly cookies automatically, no need to save tokens
+ * We only need to save admin data for UI display
  */
 async function handleLoginSuccess(data: any): Promise<void> {
-  // Save tokens and admin data
-  AuthService.saveTokens(data.access_token, data.refresh_token, data.admin);
+  // Save admin data (tokens are in HttpOnly cookies managed by backend)
+  AuthService.saveAdmin(data.admin);
 
-  // Schedule token refresh
-  AuthService.scheduleTokenRefresh(data.expires_in);
+  // Get expires_in to schedule token refresh
+  const expiresIn = data.expires_in || 43200; // 12 hours default
+  AuthService.scheduleTokenRefresh(expiresIn);
 
   // Small delay for animation
   await new Promise((resolve) => setTimeout(resolve, 500));

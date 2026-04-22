@@ -18,7 +18,12 @@ API ini menyediakan endpoint untuk:
 
 **Response Format:** Semua response menggunakan JSON dengan struktur konsisten
 
-**Authentication:** Semua endpoint kecuali `/health` dan `/api/auth/*` memerlukan JWT token dalam header `Authorization: Bearer <token>`
+**Authentication:**
+
+- Semua endpoint kecuali `/health` dan `/api/auth/*` memerlukan JWT token
+- Token disimpan dalam **HttpOnly cookies** yang otomatis dikirim browser
+- Backend juga support Authorization header: `Authorization: Bearer <token>` (backward compatibility)
+- Frontend HARUS set `credentials: 'include'` dalam fetch requests untuk HttpOnly cookies bekerja
 
 ## Rate Limiting
 
@@ -85,21 +90,59 @@ Semua error response mengikuti format berikut:
 
 ---
 
-## Token Information
+## Token Information (HttpOnly Cookies)
 
-- **Access Token:** Valid 12 jam (43200 detik, configurable via ACCESS_TOKEN_EXPIRES_IN)
-- **Refresh Token:** Valid 7 hari (604800 detik, configurable via REFRESH_TOKEN_EXPIRES_IN)
-- **Auto-Refresh:** Otomatis refresh 5 menit sebelum expiry (background)
+### Security Implementation ✅
+
+- **Storage:** Access & Refresh tokens dalam **HttpOnly cookies** (tidak accessible via JavaScript)
+- **Flags:**
+  - `HttpOnly` - Proteksi dari XSS attacks (JavaScript tidak bisa baca)
+  - `Secure` - HTTPS only (production) / HTTP in dev
+  - `SameSite=Strict` - CSRF protection (hanya kirim same-site requests)
+- **Duration:**
+  - Access Token: 12 jam (43200 detik)
+  - Refresh Token: 7 hari (604800 detik)
+
+### Browser Automatic Cookie Management
+
+- Browser otomatis kirim cookies dengan setiap request (jika `credentials: 'include'`)
+- Backend otomatis kirim `Set-Cookie` headers untuk set/clear cookies
+- Frontend TIDAK perlu manual handling tokens
+
+### Frontend Implementation
+
+```typescript
+// ✅ Benar - Cookies otomatis included
+const response = await fetch("/api/endpoint", {
+  method: "POST",
+  credentials: "include", // PENTING: Agar cookies dikirim
+  body: JSON.stringify(data),
+});
+
+// ❌ Salah - Cookies tidak included
+const response = await fetch("/api/endpoint", {
+  method: "POST",
+  // Missing credentials: 'include'
+  body: JSON.stringify(data),
+});
+```
 
 ### Token Lifecycle
 
 1. User login dengan username/email + password
-2. Backend verifikasi, return access_token + refresh_token
-3. Frontend simpan tokens ke localStorage
-4. Setiap API request: tambah header `Authorization: Bearer <access_token>`
-5. Token auto-refresh 55 menit setelah login (background)
-6. Jika token expired saat request: auto-refresh dan retry
-7. Jika refresh_token juga expired: user harus login lagi
+2. Backend verifikasi & set HttpOnly cookies (Access + Refresh tokens)
+3. Browser otomatis menyimpan cookies
+4. Setiap API request: browser otomatis kirim cookies (credentials: 'include')
+5. Frontend auto-refresh token 5 menit sebelum expiry
+6. Backend verifikasi token dari cookie, atau Authorization header (backward compat)
+7. Jika token expired: frontend auto-refresh dari cookie
+8. Jika refresh_token juga expired: user harus login lagi
+
+### Logout
+
+- Backend kirim `Set-Cookie` dengan maxAge=0 untuk clear cookies
+- Browser otomatis hapus cookies
+- Frontend clear sessionStorage (admin data)
 
 ---
 
@@ -131,6 +174,8 @@ POST /api/auth/login
 
 **Response (Success - HTTP 200):**
 
+Tokens dikirim via **Set-Cookie headers** (HttpOnly), bukan di response body:
+
 ```json
 {
   "success": true,
@@ -141,12 +186,16 @@ POST /api/auth/login
       "username": "admin",
       "is_active": true,
       "created_at": "2026-04-13T00:00:00.000Z"
-    },
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "expires_in": 43200
+    }
   }
 }
+```
+
+**Set-Cookie Headers (sent by backend):**
+
+```
+Set-Cookie: access_token=eyJhb...; HttpOnly; Secure; SameSite=Strict; Max-Age=43200; Path=/
+Set-Cookie: refresh_token=eyJh...; HttpOnly; Secure; SameSite=Strict; Max-Age=604800; Path=/
 ```
 
 **Error Responses:**
@@ -156,15 +205,34 @@ POST /api/auth/login
 - 401: `ADMIN_INACTIVE` - Akun admin tidak aktif
 - 429: `RATE_LIMIT_EXCEEDED` - Too many login attempts
 
-**cURL:**
+**cURL (with cookie jar):**
 
 ```bash
 curl -X POST http://localhost:5000/api/auth/login \
   -H "Content-Type: application/json" \
+  -c cookies.txt \
   -d '{
     "username_or_email": "admin",
     "password": "my-password-123"
   }'
+```
+
+**JavaScript Frontend:**
+
+```typescript
+const response = await fetch("/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "include",
+  body: JSON.stringify({
+    username_or_email: "admin",
+    password: "my-password-123",
+  }),
+});
+
+const data = await response.json();
+// data.data.admin contains admin info
+// tokens otomatis di cookies (browser management)
 ```
 
 ---
@@ -175,21 +243,17 @@ curl -X POST http://localhost:5000/api/auth/login \
 POST /api/auth/refresh
 ```
 
-**Deskripsi:** Refresh access token menggunakan refresh token. Tidak perlu Authorization header.
+**Deskripsi:** Refresh access token menggunakan refresh token dari HttpOnly cookie. Tidak perlu request body.
 
-**Request Body:**
+**Request Body:** (kosong atau tidak perlu)
 
 ```json
-{
-  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-}
+{}
 ```
 
-**Parameters:**
-
-- `refresh_token` (string, required): Refresh token dari login response
-
 **Response (Success - HTTP 200):**
+
+Tokens dikirim via **Set-Cookie headers**, tidak di response body:
 
 ```json
 {
@@ -199,58 +263,56 @@ POST /api/auth/refresh
     "expires_in": 43200,
     "admin": {
       "id": "550e8400-e29b-41d4-a716-446655440000",
-      "username": "admin"
+      "username": "admin",
+      "email": "admin@example.com"
     }
   }
 }
 ```
 
+**Note:** Access token juga di response.data untuk reference, tapi yang actual storage di HttpOnly cookie dari Set-Cookie header
+
 **Error Responses:**
 
-- 400: `MISSING_REFRESH_TOKEN` - Refresh token tidak ada
+- 401: `MISSING_REFRESH_TOKEN` - Refresh token tidak ada di cookie
 - 401: `INVALID_REFRESH_TOKEN` - Refresh token expired atau invalid
 
-**cURL:**
+**cURL (reuse cookies):**
 
 ```bash
 curl -X POST http://localhost:5000/api/auth/refresh \
   -H "Content-Type: application/json" \
-  -d '{
-    "refresh_token": "eyJhbGc..."
-  }'
+  -b cookies.txt \
+  -c cookies.txt
 ```
 
----
+**JavaScript Frontend:**
 
-#### 3. Logout
+```typescript
+const response = await fetch("/api/auth/refresh", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "include",
+  body: JSON.stringify({}),
+});
 
+const data = await response.json();
+// New access token di cookies (Set-Cookie)
+// expires_in untuk schedule next refresh
 ```
-POST /api/auth/logout
-```
 
-**Deskripsi:** Logout dan invalidate session. Memerlukan token.
-
-**Headers:**
-
-```
-Authorization: Bearer <access_token>
-```
-
-**Response (Success - HTTP 200):**
-
-```json
-{
-  "success": true,
-  "message": "Logout successful"
+"success": true,
+"message": "Logout successful"
 }
-```
+
+````
 
 **cURL:**
 
 ```bash
 curl -X POST http://localhost:5000/api/auth/logout \
   -H "Authorization: Bearer <access_token>"
-```
+````
 
 ---
 
@@ -553,11 +615,7 @@ Authorization: Bearer <access_token>
           "santriId": "uuid-001",
           "santriName": "Ahmad Fadli",
           "rfidId": "RFD001001",
-          "attendance": [
-            "✓",
-            "",
-            "✓"
-          ],
+          "attendance": ["✓", "", "✓"],
           "totalPresent": 28,
           "totalAbsent": 2,
           "percentage": 93.3
@@ -574,7 +632,7 @@ Authorization: Bearer <access_token>
 - `attendance`: Array 30 elemen (sesuai `daysInMonth`) dengan "✓" untuk hadir, "" untuk tidak hadir
 - `totalPresent`: Jumlah hari hadir
 - `totalAbsent`: Jumlah hari tidak hadir
-- `percentage`: Persentase kehadiran (totalPresent / daysInMonth * 100)
+- `percentage`: Persentase kehadiran (totalPresent / daysInMonth \* 100)
 
 **Error Responses:**
 
@@ -958,13 +1016,13 @@ curl -X GET "http://localhost:5000/api/admin/archive/history?limit=10&offset=0" 
 
 ## Response Codes
 
-| Code | Meaning                              |
-| ---- | ------------------------------------ |
-| 200  | OK - Request berhasil                |
-| 400  | Bad Request - Data tidak valid       |
-| 401  | Unauthorized - Token invalid/missing |
+| Code | Meaning                                 |
+| ---- | --------------------------------------- |
+| 200  | OK - Request berhasil                   |
+| 400  | Bad Request - Data tidak valid          |
+| 401  | Unauthorized - Token invalid/missing    |
 | 429  | Too Many Requests - Rate limit exceeded |
-| 500  | Internal Server Error - Error server |
+| 500  | Internal Server Error - Error server    |
 
 ---
 
