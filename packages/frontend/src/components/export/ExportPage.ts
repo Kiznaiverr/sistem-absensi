@@ -4,6 +4,7 @@
  */
 
 import { ApiService } from "../../services/api";
+import { getFullPageSkeletonHTML } from "../../utils/loading";
 import { ExcelGenerator } from "../../services/excel";
 
 interface FilterState {
@@ -43,13 +44,30 @@ export class ExportPageComponent {
   }
 
   async init(): Promise<void> {
-    await Promise.all([
-      this.loadClasses(),
-      this.loadAvailableMonths("siang"),
-      this.loadAvailableMonths("malam"),
-    ]);
-    this.render();
-    this.setupEventListeners();
+    try {
+      // Show skeleton first
+      this.renderSkeleton();
+
+      // Load data
+      await Promise.all([
+        this.loadClasses(),
+        this.loadAvailableMonths("siang"),
+        this.loadAvailableMonths("malam"),
+      ]);
+
+      // Show actual form
+      this.render();
+      this.setupEventListeners();
+    } catch (error) {
+      console.error("Failed to initialize export page:", error);
+      this.render();
+    }
+  }
+
+  private renderSkeleton(): void {
+    const container = document.getElementById(this.containerId);
+    if (!container) return;
+    container.innerHTML = getFullPageSkeletonHTML();
   }
 
   private async loadClasses(): Promise<void> {

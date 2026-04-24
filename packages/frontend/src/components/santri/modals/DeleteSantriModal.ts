@@ -3,6 +3,7 @@
  * Confirmation dialog for deleting santri
  */
 
+import { setButtonLoading } from "../../../utils/loading";
 import type { Santri } from "../SantriPage";
 
 interface DeleteSantriModalProps {
@@ -124,14 +125,15 @@ export class DeleteSantriModal {
 
     // Confirm button
     confirmBtn?.addEventListener("click", async () => {
-      (confirmBtn as HTMLButtonElement).disabled = true;
-      confirmBtn.textContent = "Loading...";
+      // Show loading state
+      setButtonLoading("btn-confirm", true, "Menghapus...");
 
       try {
         await this.props.onConfirm();
       } finally {
-        (confirmBtn as HTMLButtonElement).disabled = false;
-        confirmBtn.textContent = "Hapus";
+        // Reset button state
+        setButtonLoading("btn-confirm", false);
+        (confirmBtn as HTMLButtonElement).textContent = "Hapus";
       }
     });
   }

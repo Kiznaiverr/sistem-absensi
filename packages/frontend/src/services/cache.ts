@@ -34,9 +34,14 @@ interface CacheStore {
     malam: Set<string>; // RFID IDs
     records: AttendanceCheckIn[];
   };
+  available_months: {
+    siang: { years: number[]; months_by_year: Record<number, number[]> };
+    malam: { years: number[]; months_by_year: Record<number, number[]> };
+  };
   last_sync: {
     santri: number;
     attendance: number;
+    available_months: number;
   };
 }
 
@@ -44,6 +49,7 @@ export class FrontendCacheService {
   private static readonly DB_NAME = "absensi_db";
   private static readonly STORE_NAME = "cache";
   private static readonly TTL_ATTENDANCE_SECONDS = 300; // 5 minutes, matches backend TTL
+  private static readonly TTL_AVAILABLE_MONTHS_SECONDS = 1800; // 30 minutes - available-months doesn't change frequently
   private static db: IDBDatabase | null = null;
 
   private static store: CacheStore = {
@@ -54,9 +60,14 @@ export class FrontendCacheService {
       malam: new Set(),
       records: [],
     },
+    available_months: {
+      siang: { years: [], months_by_year: {} },
+      malam: { years: [], months_by_year: {} },
+    },
     last_sync: {
       santri: 0,
       attendance: 0,
+      available_months: 0,
     },
   };
 
@@ -71,6 +82,19 @@ export class FrontendCacheService {
     const ageSeconds = Math.floor(ageMs / 1000);
 
     return ageSeconds > this.TTL_ATTENDANCE_SECONDS;
+  }
+
+  /**
+   * Check if available-months cache is expired (older than TTL)
+   */
+  private static isAvailableMonthsCacheExpired(): boolean {
+    const lastSync = this.store.last_sync.available_months;
+    if (lastSync === 0) return true; // Never synced
+
+    const ageMs = Date.now() - lastSync;
+    const ageSeconds = Math.floor(ageMs / 1000);
+
+    return ageSeconds > this.TTL_AVAILABLE_MONTHS_SECONDS;
   }
 
   /**
@@ -134,6 +158,9 @@ export class FrontendCacheService {
               malam: new Set(item.value.malam),
             };
           }
+          if (item.key === "available_months") {
+            this.store.available_months = item.value;
+          }
         }
         resolve();
       };
@@ -164,6 +191,12 @@ export class FrontendCacheService {
           siang: Array.from(this.store.attendance_today.siang),
           malam: Array.from(this.store.attendance_today.malam),
         },
+      });
+
+      // Save available-months
+      store.put({
+        key: "available_months",
+        value: this.store.available_months,
       });
 
       transaction.oncomplete = () => resolve();
@@ -260,6 +293,31 @@ export class FrontendCacheService {
       malam: new Set(),
       records: [],
     };
+    this.saveToIndexedDB();
+  }
+
+  /**
+   * Get available-months from cache
+   */
+  static getAvailableMonths(shift: "siang" | "malam"): {
+    years: number[];
+    months_by_year: Record<number, number[]>;
+  } | null {
+    if (this.isAvailableMonthsCacheExpired()) {
+      return null; // Cache expired
+    }
+    return this.store.available_months[shift];
+  }
+
+  /**
+   * Set available-months cache
+   */
+  static setAvailableMonths(
+    shift: "siang" | "malam",
+    data: { years: number[]; months_by_year: Record<number, number[]> },
+  ): void {
+    this.store.available_months[shift] = data;
+    this.store.last_sync.available_months = Date.now();
     this.saveToIndexedDB();
   }
 

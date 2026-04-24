@@ -4,6 +4,7 @@
  */
 
 import { ApiService } from "../../services/api";
+import { getFullPageSkeletonHTML } from "../../utils/loading";
 import { SantriTable } from "./SantriTable";
 import { SantriSidebar } from "./SantriSidebar";
 import { AddSantriModal } from "./modals/AddSantriModal";
@@ -61,11 +62,18 @@ export class SantriPage {
    */
   async init(): Promise<void> {
     try {
+      // Show skeleton first
+      this.renderSkeleton();
+
+      // Load data
       await this.loadData();
+
+      // Show actual content
       this.render();
       this.setupEventListeners();
     } catch (error) {
       console.error("Failed to initialize Santri page:", error);
+      this.render();
       this.showError("Gagal memuat data santri");
     }
   }
@@ -127,6 +135,15 @@ export class SantriPage {
    */
   private getTotalPages(): number {
     return Math.ceil(this.filteredSantri.length / this.itemsPerPage);
+  }
+
+  /**
+   * Render skeleton loader during initial load
+   */
+  private renderSkeleton(): void {
+    const container = document.getElementById(this.containerId);
+    if (!container) return;
+    container.innerHTML = getFullPageSkeletonHTML();
   }
 
   /**

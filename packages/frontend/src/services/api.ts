@@ -8,6 +8,7 @@ import type {
   BatchAttendanceResponse,
 } from "@absensi/shared/types";
 import { AuthService } from "./auth";
+import { FrontendCacheService } from "./cache";
 
 const API_BASE_URL = "/api";
 
@@ -192,16 +193,30 @@ export class ApiService {
   /**
    * GET /api/attendance/available-months
    * Get available months and years with attendance data
+   * Uses 30-minute cache to reduce network requests
    */
   static async getAvailableMonths(shift: "siang" | "malam"): Promise<{
     years: number[];
     months_by_year: Record<number, number[]>;
   }> {
+    // Check cache first
+    const cached = FrontendCacheService.getAvailableMonths(shift);
+    if (cached) {
+      console.log(`[Cache HIT] Available months for ${shift}`);
+      return cached;
+    }
+
+    console.log(`[Cache MISS] Fetching available months for ${shift}`);
     const response = await this.request<ApiResponse>(
       "GET",
       `/attendance/available-months?shift=${shift}`,
     );
-    return response.data || { years: [], months_by_year: {} };
+    const data = response.data || { years: [], months_by_year: {} };
+
+    // Store in cache
+    FrontendCacheService.setAvailableMonths(shift, data);
+
+    return data;
   }
 
   /**

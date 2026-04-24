@@ -3,6 +3,7 @@
  * Form to create new santri
  */
 
+import { setButtonLoading } from "../../../utils/loading";
 import type { Class } from "../SantriPage";
 
 interface AddSantriModalProps {
@@ -147,14 +148,15 @@ export class AddSantriModal {
         return;
       }
 
-      (submitBtn as HTMLButtonElement).disabled = true;
-      submitBtn.textContent = "Loading...";
+      // Show loading state
+      setButtonLoading("btn-submit", true, "Menyimpan...");
 
       try {
         await this.props.onSubmit(data);
       } finally {
-        (submitBtn as HTMLButtonElement).disabled = false;
-        submitBtn.textContent = "Simpan";
+        // Reset button state
+        setButtonLoading("btn-submit", false);
+        (submitBtn as HTMLButtonElement).textContent = "Simpan";
       }
     });
 

@@ -3,6 +3,7 @@
  * Form to update existing santri
  */
 
+import { setButtonLoading } from "../../../utils/loading";
 import type { Santri, Class } from "../SantriPage";
 
 interface EditSantriModalProps {
@@ -180,14 +181,15 @@ export class EditSantriModal {
         return;
       }
 
-      (submitBtn as HTMLButtonElement).disabled = true;
-      submitBtn.textContent = "Loading...";
+      // Show loading state
+      setButtonLoading("btn-submit", true, "Menyimpan...");
 
       try {
         await this.props.onSubmit(data);
       } finally {
-        (submitBtn as HTMLButtonElement).disabled = false;
-        submitBtn.textContent = "Simpan";
+        // Reset button state
+        setButtonLoading("btn-submit", false);
+        (submitBtn as HTMLButtonElement).textContent = "Simpan";
       }
     });
 
