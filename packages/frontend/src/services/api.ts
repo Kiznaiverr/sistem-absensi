@@ -172,10 +172,24 @@ export class ApiService {
   /**
    * GET /api/classes
    * Get all classes
+   * Uses 1-hour cache to reduce network requests
    */
   static async getClasses(): Promise<any[]> {
+    // Check cache first
+    const cached = FrontendCacheService.getClasses();
+    if (cached) {
+      console.log(`[Cache HIT] Classes list`);
+      return cached;
+    }
+
+    console.log(`[Cache MISS] Fetching classes from API`);
     const response = await this.request<ApiResponse>("GET", "/classes");
-    return response.data || [];
+    const classes = response.data || [];
+
+    // Store in cache
+    FrontendCacheService.setClasses(classes);
+
+    return classes;
   }
 
   /**
@@ -236,24 +250,48 @@ export class ApiService {
   /**
    * GET /api/santri
    * Get all santri with optional filters
+   * Uses 5-minute cache to reduce network requests (only when no filters)
    */
   static async getAllSantri(filters?: {
     class_id?: string;
     search?: string;
     is_active?: boolean;
   }): Promise<any[]> {
+    // Only use cache if no meaningful filters
+    // Filters are considered "active" only if they have non-default values
+    const hasActiveFilters =
+      filters &&
+      (filters.class_id || filters.search || filters.is_active === false); // Only false is meaningful (show inactive)
+
+    if (!hasActiveFilters) {
+      const cached = FrontendCacheService.getSantri();
+      if (cached && cached.length > 0) {
+        console.log(`[Cache HIT] Santri list`);
+        return cached as any[];
+      }
+    }
+
     const params = new URLSearchParams();
     if (filters?.class_id) params.append("class_id", filters.class_id);
     if (filters?.search) params.append("search", filters.search);
-    if (filters?.is_active !== undefined)
-      params.append("is_active", filters.is_active.toString());
+    if (filters?.is_active === false) params.append("is_active", "false");
 
     const queryStr = params.toString();
+    console.log(
+      `[Cache ${hasActiveFilters ? "SKIP" : "MISS"}] Fetching santri from API`,
+    );
     const response = await this.request<ApiResponse>(
       "GET",
       `/santri${queryStr ? "?" + queryStr : ""}`,
     );
-    return response.data || [];
+    const santriList = response.data || [];
+
+    // Cache only if no active filters
+    if (!hasActiveFilters) {
+      FrontendCacheService.setSantri(santriList);
+    }
+
+    return santriList;
   }
 
   /**

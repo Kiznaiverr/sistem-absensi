@@ -28,6 +28,7 @@ export interface AttendanceCheckIn {
 
 interface CacheStore {
   santri: Map<string, CachedSantri>;
+  classes: any[];
   attendance_today: {
     date: string;
     siang: Set<string>; // RFID IDs
@@ -40,6 +41,7 @@ interface CacheStore {
   };
   last_sync: {
     santri: number;
+    classes: number;
     attendance: number;
     available_months: number;
   };
@@ -48,12 +50,15 @@ interface CacheStore {
 export class FrontendCacheService {
   private static readonly DB_NAME = "absensi_db";
   private static readonly STORE_NAME = "cache";
+  private static readonly TTL_SANTRI_SECONDS = 300; // 5 minutes, matches backend TTL
+  private static readonly TTL_CLASSES_SECONDS = 3600; // 1 hour, matches backend TTL
   private static readonly TTL_ATTENDANCE_SECONDS = 300; // 5 minutes, matches backend TTL
   private static readonly TTL_AVAILABLE_MONTHS_SECONDS = 1800; // 30 minutes - available-months doesn't change frequently
   private static db: IDBDatabase | null = null;
 
   private static store: CacheStore = {
     santri: new Map(),
+    classes: [],
     attendance_today: {
       date: new Date().toISOString().split("T")[0],
       siang: new Set(),
@@ -66,6 +71,7 @@ export class FrontendCacheService {
     },
     last_sync: {
       santri: 0,
+      classes: 0,
       attendance: 0,
       available_months: 0,
     },
@@ -82,6 +88,32 @@ export class FrontendCacheService {
     const ageSeconds = Math.floor(ageMs / 1000);
 
     return ageSeconds > this.TTL_ATTENDANCE_SECONDS;
+  }
+
+  /**
+   * Check if santri cache is expired (older than TTL)
+   */
+  private static isSantriCacheExpired(): boolean {
+    const lastSync = this.store.last_sync.santri;
+    if (lastSync === 0) return true; // Never synced
+
+    const ageMs = Date.now() - lastSync;
+    const ageSeconds = Math.floor(ageMs / 1000);
+
+    return ageSeconds > this.TTL_SANTRI_SECONDS;
+  }
+
+  /**
+   * Check if classes cache is expired (older than TTL)
+   */
+  private static isClassesCacheExpired(): boolean {
+    const lastSync = this.store.last_sync.classes;
+    if (lastSync === 0) return true; // Never synced
+
+    const ageMs = Date.now() - lastSync;
+    const ageSeconds = Math.floor(ageMs / 1000);
+
+    return ageSeconds > this.TTL_CLASSES_SECONDS;
   }
 
   /**
@@ -151,6 +183,9 @@ export class FrontendCacheService {
           if (item.key === "santri") {
             this.store.santri = new Map(item.value);
           }
+          if (item.key === "classes") {
+            this.store.classes = item.value || [];
+          }
           if (item.key === "attendance_today") {
             this.store.attendance_today = {
               ...item.value,
@@ -183,6 +218,12 @@ export class FrontendCacheService {
         value: Array.from(this.store.santri.entries()),
       });
 
+      // Save classes
+      store.put({
+        key: "classes",
+        value: this.store.classes,
+      });
+
       // Save attendance
       store.put({
         key: "attendance_today",
@@ -207,7 +248,20 @@ export class FrontendCacheService {
    * Get all cached santri
    */
   static getSantri(): CachedSantri[] {
+    if (this.isSantriCacheExpired()) {
+      return []; // Cache expired
+    }
     return Array.from(this.store.santri.values());
+  }
+
+  /**
+   * Get classes from cache
+   */
+  static getClasses(): any[] | null {
+    if (this.isClassesCacheExpired()) {
+      return null; // Cache expired
+    }
+    return this.store.classes;
   }
 
   /**
@@ -226,6 +280,15 @@ export class FrontendCacheService {
       this.store.santri.set(s.rfid_id, s);
     }
     this.store.last_sync.santri = Date.now();
+    this.saveToIndexedDB();
+  }
+
+  /**
+   * Set classes cache
+   */
+  static setClasses(classes: any[]): void {
+    this.store.classes = classes;
+    this.store.last_sync.classes = Date.now();
     this.saveToIndexedDB();
   }
 

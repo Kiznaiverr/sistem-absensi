@@ -85,10 +85,20 @@ export class SantriPage {
     // Load classes
     this.allClasses = await ApiService.getClasses();
 
+    // Build filters - only include if actually applied
+    const filters: any = {};
+
+    // Only add is_active filter if showInactive is true
+    // (default is to show active only, which doesn't need filter)
+    if (this.currentFilters.showInactive) {
+      filters.is_active = false; // Explicitly show inactive
+    }
+
     // Load all santri
-    this.santriList = await ApiService.getAllSantri({
-      is_active: !this.currentFilters.showInactive,
-    });
+    // Pass filters only if they were actually applied
+    this.santriList = await ApiService.getAllSantri(
+      Object.keys(filters).length > 0 ? filters : undefined,
+    );
 
     this.applyFilters();
   }

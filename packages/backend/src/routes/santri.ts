@@ -135,6 +135,11 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       isActive,
     });
 
+    // Only cache if no filters (all santri)
+    if (!classId && !search && isActive === undefined) {
+      res.set("Cache-Control", "public, max-age=300"); // 5 minutes cache for all santri
+    }
+
     res.json({
       success: true,
       data: santriList,
@@ -166,6 +171,7 @@ router.get(
         });
       }
 
+      res.set("Cache-Control", "public, max-age=300"); // 5 minutes cache for individual santri
       res.json({
         success: true,
         data: santri,

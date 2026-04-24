@@ -35,6 +35,7 @@ router.get("/", async (_req: Request, res: Response, next: NextFunction) => {
       }
     }
 
+    res.set("Cache-Control", "public, max-age=3600"); // 1 hour cache for classes
     res.json({
       success: true,
       data: classes,
@@ -71,6 +72,7 @@ router.get(
         }
       }
 
+      res.set("Cache-Control", "public, max-age=300"); // 5 minutes cache for santri by class
       res.json({
         success: true,
         data: santri,
