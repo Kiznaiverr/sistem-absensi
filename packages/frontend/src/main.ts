@@ -22,6 +22,28 @@ let santriPage: SantriPage | null = null;
 let currentPage: "home" | "export" | "santri" = "home";
 let isAuthenticated = false;
 let statsUpdateInterval: ReturnType<typeof setInterval> | null = null;
+const CURRENT_PAGE_KEY = "current_page";
+
+function getSavedPage(): "home" | "export" | "santri" | null {
+  const savedPage = sessionStorage.getItem(CURRENT_PAGE_KEY);
+  if (
+    savedPage === "home" ||
+    savedPage === "export" ||
+    savedPage === "santri"
+  ) {
+    return savedPage;
+  }
+  return null;
+}
+
+function setCurrentPage(page: "home" | "export" | "santri"): void {
+  currentPage = page;
+  sessionStorage.setItem(CURRENT_PAGE_KEY, page);
+}
+
+function clearSavedPage(): void {
+  sessionStorage.removeItem(CURRENT_PAGE_KEY);
+}
 
 /**
  * Setup global event listeners
@@ -30,7 +52,7 @@ function setupGlobalEventListeners(): void {
   window.addEventListener("navigateToPage", (event: any) => {
     const page = event.detail?.page;
     if (page === "home" || page === "export" || page === "santri") {
-      currentPage = page;
+      setCurrentPage(page);
       renderApp();
     }
   });
@@ -39,13 +61,17 @@ function setupGlobalEventListeners(): void {
 /**
  * Main application initialization
  */
-async function initializeApp() {
+async function initializeApp(): Promise<void> {
   // Check authentication status
   isAuthenticated = AuthService.isAuthenticated();
 
   // If sessionStorage is empty, try to restore from valid refresh token cookie.
   if (!isAuthenticated) {
     isAuthenticated = await AuthService.restoreSession();
+  }
+
+  if (isAuthenticated) {
+    currentPage = getSavedPage() || "home";
   }
 
   // Setup global event listeners
@@ -98,6 +124,7 @@ async function handleLoginSuccess(data: any): Promise<void> {
   // Initialize main app
   try {
     isAuthenticated = true;
+    setCurrentPage("home");
     await initializeMainApp();
   } catch (error) {
     console.error("Failed to initialize main app after login:", error);
@@ -138,6 +165,20 @@ function mountHomeFeatures(): void {
   rfidFormComponent.init();
 
   startStatsUpdates();
+}
+
+function mountExportPage(): void {
+  setTimeout(() => {
+    exportPageComponent = new ExportPageComponent("export-page-container");
+    exportPageComponent.init();
+  }, 0);
+}
+
+function mountSantriPage(): void {
+  setTimeout(() => {
+    santriPage = new SantriPage("santri-page-container");
+    santriPage.init();
+  }, 0);
 }
 
 /**
@@ -187,26 +228,16 @@ function renderApp(): void {
   headerComponent = initializeHeader({
     currentPage,
     onHomeClick: () => {
-      currentPage = "home";
+      setCurrentPage("home");
       renderApp();
     },
     onExportClick: () => {
-      currentPage = "export";
+      setCurrentPage("export");
       renderApp();
-      // Initialize export page after rendering
-      setTimeout(() => {
-        exportPageComponent = new ExportPageComponent("export-page-container");
-        exportPageComponent.init();
-      }, 0);
     },
     onSantriClick: () => {
-      currentPage = "santri";
+      setCurrentPage("santri");
       renderApp();
-      // Initialize santri page after rendering
-      setTimeout(() => {
-        santriPage = new SantriPage("santri-page-container");
-        santriPage.init();
-      }, 0);
     },
     onLogoutClick: () => {
       handleLogout();
@@ -220,6 +251,10 @@ function renderApp(): void {
 
     // Initialize home-specific features
     mountHomeFeatures();
+  } else if (currentPage === "export") {
+    mountExportPage();
+  } else if (currentPage === "santri") {
+    mountSantriPage();
   }
 }
 
@@ -231,6 +266,7 @@ function handleLogout(): void {
   AuthService.clearAuth();
   isAuthenticated = false;
   currentPage = "home";
+  clearSavedPage();
 
   // Redirect to login
   showLoginPage();
