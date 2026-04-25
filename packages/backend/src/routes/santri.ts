@@ -3,7 +3,11 @@
  * POST /api/santri - Add new santri
  * GET /api/santri - Get all santri with filters
  * GET /api/santri/template - Download import template
- * POST /api/santri/import - Bulk import santri from Excel
+ * POST /api/santri/import-jobs - Queue bulk import santri from Excel
+ * GET /api/santri/import-jobs/:jobId - Get import job status
+ * GET /api/santri/import-jobs/:jobId/errors - Get import error rows
+ * GET /api/santri/import-jobs/:jobId/progress - SSE progress
+ * GET /api/santri/import-jobs/:jobId/errors/export - Export import errors
  * GET /api/santri/:santriId - Get santri by ID
  * PUT /api/santri/:santriId - Update santri
  * PATCH /api/santri/:santriId/rfid - Update santri RFID
@@ -14,11 +18,11 @@
 
 import { Router, Request, Response, NextFunction } from "express";
 import type { Router as ExpressRouter } from "express";
-import multer, { MulterError } from "multer";
+import multer from "multer";
+import { cacheService } from "../services/cache.service.js";
 import { DatabaseService } from "../services/database.service.js";
-import { SantriImportService } from "../services/santri-import.service.js";
+import { SantriImportJobService } from "../services/santri-import-job.service.js";
 import { SantriTemplateService } from "../services/santri-template.service.js";
-import { ImportProgressService } from "../services/import-progress.service.js";
 import { AuditService } from "../utils/audit.js";
 import { createLogger } from "../utils/logger.js";
 import {
@@ -80,6 +84,20 @@ function getClientIp(req: Request): string | undefined {
  */
 function getUserAgent(req: Request): string | undefined {
   return req.headers["user-agent"];
+}
+
+function isJobOwnedByCurrentAdmin(
+  req: Request,
+  createdBy: string | null,
+): boolean {
+  const currentAdminId = (req as any).user?.admin_id;
+  if (!createdBy) return true;
+  return currentAdminId === createdBy;
+}
+
+function invalidateSantriClassCache(): void {
+  const deletedKeys = cacheService.deleteByPrefix("santri:class:");
+  logger.info("Invalidated santri class cache", { deleted_keys: deletedKeys });
 }
 
 /**
@@ -144,6 +162,7 @@ router.post(
       });
 
       logger.info(`Santri created: ${santri.name} (${santri.rfid_id})`);
+      invalidateSantriClassCache();
 
       res.status(201).json({
         success: true,
@@ -175,10 +194,8 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       isActive,
     });
 
-    // Only cache if no filters (all santri)
-    if (!classId && !search && isActive === undefined) {
-      res.set("Cache-Control", "public, max-age=300"); // 5 minutes cache for all santri
-    }
+    // Avoid stale admin data after import/edit/delete.
+    res.set("Cache-Control", "private, no-store, max-age=0");
 
     res.json({
       success: true,
@@ -220,78 +237,14 @@ router.get(
 );
 
 /**
- * GET /api/santri/import-progress/:sessionId
- * Server-Sent Events (SSE) endpoint for real-time import progress
- */
-router.get(
-  "/import-progress/:sessionId",
-  async (req: Request, res: Response, next: NextFunction) => {
-    // Disable timeout for SSE connection (long-lived)
-    req.setTimeout(0);
-    res.setTimeout(0);
-
-    const { sessionId } = req.params;
-
-    // Validate session exists
-    if (!ImportProgressService.hasSession(sessionId)) {
-      return res.status(404).json({
-        success: false,
-        error: "Session not found",
-        error_code: "SESSION_NOT_FOUND",
-      });
-    }
-
-    // Set SSE headers
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-
-    // Send initial connection message
-    res.write(`data: ${JSON.stringify({ type: "connected", sessionId })}\n\n`);
-
-    // Send existing events
-    const session = ImportProgressService.getSession(sessionId);
-    if (session) {
-      for (const event of session.events) {
-        res.write(`data: ${JSON.stringify(event)}\n\n`);
-      }
-    }
-
-    // Keep connection open and send new events as they arrive
-    const interval = setInterval(() => {
-      const lastEvent = ImportProgressService.getLastEvent(sessionId);
-      if (lastEvent) {
-        res.write(`data: ${JSON.stringify(lastEvent)}\n\n`);
-      }
-
-      // Close if import is complete or error
-      const sess = ImportProgressService.getSession(sessionId);
-      if (sess?.isComplete) {
-        clearInterval(interval);
-        res.write(`data: ${JSON.stringify({ type: "closed" })}\n\n`);
-        res.end();
-      }
-    }, 100); // Check every 100ms
-
-    // Cleanup on client disconnect
-    req.on("close", () => {
-      clearInterval(interval);
-      res.end();
-    });
-  },
-);
-
-/**
- * POST /api/santri/import
- * Import santri from Excel file (Admin only)
+ * POST /api/santri/import-jobs
+ * Create import job and process in background worker
  */
 router.post(
-  "/import",
+  "/import-jobs",
   upload.single("file"),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Validate file was uploaded
       if (!req.file) {
         return res.status(400).json({
           success: false,
@@ -300,61 +253,35 @@ router.post(
         });
       }
 
-      const sessionId = req.query.sessionId as string | undefined;
       const adminId = (req as any).user?.admin_id;
       const adminEmail = (req as any).user?.email;
-      const clientIp = getClientIp(req);
-      const userAgent = getUserAgent(req);
 
-      logger.info(`Starting import for admin: ${adminEmail}`, {
+      const job = await SantriImportJobService.createQueuedJob({
+        fileBuffer: req.file.buffer,
         fileName: req.file.originalname,
-        fileSize: req.file.size,
-        sessionId,
-      });
-
-      // Create progress session if provided
-      if (sessionId) {
-        ImportProgressService.createSession(sessionId);
-      }
-
-      // Process import with progress tracking
-      const result = await SantriImportService.importFromExcel(
-        req.file.buffer,
         adminId,
         adminEmail,
-        sessionId
-          ? (event) => ImportProgressService.addEvent(sessionId, event)
-          : undefined,
-      );
-
-      // Audit log for successful import
-      if (result.summary.imported > 0) {
-        await AuditService.log("SANTRI_BULK_IMPORT", {
-          admin_id: adminId,
-          admin_email: adminEmail,
-          total_rows: result.summary.total_rows,
-          imported_count: result.summary.imported,
-          skipped_count: result.summary.skipped,
-          file_name: req.file.originalname,
-          file_size: req.file.size,
-          error_count: result.errors.length,
-          ip: clientIp,
-          user_agent: userAgent,
-        });
-      }
-
-      logger.info(`Import completed`, {
-        total: result.summary.total_rows,
-        imported: result.summary.imported,
-        skipped: result.summary.skipped,
       });
 
-      res.json(result);
-    } catch (error: any) {
-      logger.error("Error importing santri", error);
+      logger.info("Import job queued", {
+        jobId: job.id,
+        adminEmail,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+      });
 
-      // Handle specific multer errors
-      if (error.code === "LIMIT_FILE_SIZE") {
+      res.status(202).json({
+        success: true,
+        data: {
+          job_id: job.id,
+          status: job.status,
+          progress_percent: job.progress_percent,
+          created_at: job.created_at,
+          expires_at: job.expires_at,
+        },
+      });
+    } catch (error: any) {
+      if (error?.code === "LIMIT_FILE_SIZE") {
         return res.status(400).json({
           success: false,
           error: "Berkas terlalu besar (max 25MB)",
@@ -362,7 +289,7 @@ router.post(
         });
       }
 
-      if (error.message.includes("format Excel")) {
+      if (error?.message?.includes("format Excel")) {
         return res.status(400).json({
           success: false,
           error: "Berkas harus format Excel (.xlsx atau .xls)",
@@ -370,6 +297,243 @@ router.post(
         });
       }
 
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /api/santri/import-jobs/:jobId
+ * Get import job status and summary
+ */
+router.get(
+  "/import-jobs/:jobId",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { jobId } = req.params;
+      const job = await SantriImportJobService.getJob(jobId);
+
+      if (!job) {
+        return res.status(404).json({
+          success: false,
+          error: "Job tidak ditemukan",
+          error_code: "JOB_NOT_FOUND",
+        });
+      }
+
+      if (!isJobOwnedByCurrentAdmin(req, job.created_by)) {
+        return res.status(403).json({
+          success: false,
+          error: "Akses ditolak",
+          error_code: "FORBIDDEN",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          job_id: job.id,
+          status: job.status,
+          stage: job.stage,
+          message: job.message,
+          progress_percent: job.progress_percent,
+          total_rows: job.total_rows,
+          processed_rows: job.processed_rows,
+          success_count: job.success_count,
+          error_count: job.error_count,
+          created_at: job.created_at,
+          started_at: job.started_at,
+          finished_at: job.finished_at,
+          expires_at: job.expires_at,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /api/santri/import-jobs/:jobId/errors
+ * Get import row-level errors
+ */
+router.get(
+  "/import-jobs/:jobId/errors",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { jobId } = req.params;
+      const job = await SantriImportJobService.getJob(jobId);
+
+      if (!job) {
+        return res.status(404).json({
+          success: false,
+          error: "Job tidak ditemukan",
+          error_code: "JOB_NOT_FOUND",
+        });
+      }
+
+      if (!isJobOwnedByCurrentAdmin(req, job.created_by)) {
+        return res.status(403).json({
+          success: false,
+          error: "Akses ditolak",
+          error_code: "FORBIDDEN",
+        });
+      }
+
+      const errors = await DatabaseService.getSantriImportJobErrors(jobId);
+
+      res.json({
+        success: true,
+        data: errors.map((err) => ({
+          row: err.row_number,
+          data: {
+            name: err.name,
+            rfid_id: err.rfid_id,
+            class_name: err.class_name,
+          },
+          error_type: err.error_type,
+          message: err.message,
+          severity: err.severity,
+        })),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /api/santri/import-jobs/:jobId/progress
+ * SSE endpoint for import job progress
+ */
+router.get(
+  "/import-jobs/:jobId/progress",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      req.setTimeout(0);
+      res.setTimeout(0);
+
+      const { jobId } = req.params;
+      const job = await SantriImportJobService.getJob(jobId);
+
+      if (!job) {
+        return res.status(404).json({
+          success: false,
+          error: "Job tidak ditemukan",
+          error_code: "JOB_NOT_FOUND",
+        });
+      }
+
+      if (!isJobOwnedByCurrentAdmin(req, job.created_by)) {
+        return res.status(403).json({
+          success: false,
+          error: "Akses ditolak",
+          error_code: "FORBIDDEN",
+        });
+      }
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+
+      let lastFingerprint = "";
+
+      const sendEvent = async () => {
+        const current = await SantriImportJobService.getJob(jobId);
+        if (!current) {
+          res.write(
+            `data: ${JSON.stringify({ stage: "error", message: "Job tidak ditemukan" })}\n\n`,
+          );
+          res.end();
+          return true;
+        }
+
+        const fingerprint = `${current.status}|${current.stage}|${current.progress_percent}|${current.processed_rows}|${current.error_count}`;
+        if (fingerprint !== lastFingerprint) {
+          lastFingerprint = fingerprint;
+          res.write(
+            `data: ${JSON.stringify({
+              job_id: current.id,
+              stage: current.stage,
+              status: current.status,
+              percentage: current.progress_percent,
+              current: current.processed_rows,
+              total: current.total_rows,
+              message: current.message,
+              success_count: current.success_count,
+              error_count: current.error_count,
+            })}\n\n`,
+          );
+        }
+
+        if (current.status === "completed" || current.status === "failed") {
+          res.write(`data: ${JSON.stringify({ type: "closed" })}\n\n`);
+          res.end();
+          return true;
+        }
+
+        return false;
+      };
+
+      const isClosed = await sendEvent();
+      if (isClosed) return;
+
+      const timer = setInterval(() => {
+        void sendEvent();
+      }, 1000);
+
+      req.on("close", () => {
+        clearInterval(timer);
+        res.end();
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /api/santri/import-jobs/:jobId/errors/export
+ * Export import errors as Excel
+ */
+router.get(
+  "/import-jobs/:jobId/errors/export",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { jobId } = req.params;
+      const job = await SantriImportJobService.getJob(jobId);
+
+      if (!job) {
+        return res.status(404).json({
+          success: false,
+          error: "Job tidak ditemukan",
+          error_code: "JOB_NOT_FOUND",
+        });
+      }
+
+      if (!isJobOwnedByCurrentAdmin(req, job.created_by)) {
+        return res.status(403).json({
+          success: false,
+          error: "Akses ditolak",
+          error_code: "FORBIDDEN",
+        });
+      }
+
+      const fileBuffer =
+        await SantriImportJobService.exportJobErrorsExcel(jobId);
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="import-errors-${jobId}.xlsx"`,
+      );
+      res.setHeader("Content-Length", fileBuffer.byteLength);
+
+      res.send(fileBuffer);
+    } catch (error) {
       next(error);
     }
   },
@@ -480,6 +644,7 @@ router.put(
       });
 
       logger.info(`Santri updated: ${updatedSantri.name}`);
+      invalidateSantriClassCache();
 
       res.json({
         success: true,
@@ -559,6 +724,7 @@ router.patch(
       logger.info(
         `Santri RFID updated: ${existingSantri.rfid_id} -> ${rfid_id}`,
       );
+      invalidateSantriClassCache();
 
       res.json({
         success: true,
@@ -615,6 +781,7 @@ router.delete(
       });
 
       logger.info(`Santri deleted (soft): ${deletedSantri.name}`);
+      invalidateSantriClassCache();
 
       res.json({
         success: true,

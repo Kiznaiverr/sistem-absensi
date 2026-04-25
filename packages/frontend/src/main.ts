@@ -105,16 +105,10 @@ async function handleLoginSuccess(data: any): Promise<void> {
 async function initializeMainApp(): Promise<void> {
   await FrontendCacheService.init();
 
-  const classes = await ApiService.getClasses();
+  await ApiService.getClasses();
 
-  // Load santri for all classes
-  const allSantri: any[] = [];
-  for (const classItem of classes) {
-    const santri = await ApiService.getSantriByClass(classItem.id);
-    allSantri.push(...(santri as any));
-  }
-
-  FrontendCacheService.setSantri(allSantri);
+  // Preload santri cache from fresh source to avoid stale class-based backend cache.
+  await ApiService.getAllSantri(undefined, { bypassCache: true });
 
   // Render UI
   renderApp();

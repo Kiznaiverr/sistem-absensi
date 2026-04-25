@@ -6,8 +6,22 @@
 import ExcelJS from "exceljs";
 import { DatabaseService } from "./database.service.js";
 import { createLogger } from "../utils/logger.js";
-import type { ProgressEvent } from "./import-progress.service.js";
-import { TEMPLATE_DATA_START_ROW } from "./santri-template.service.js";
+
+export interface ProgressEvent {
+  stage:
+    | "parsing"
+    | "validating"
+    | "checking_db"
+    | "inserting"
+    | "completed"
+    | "error";
+  current: number;
+  total: number;
+  percentage: number;
+  message: string;
+  error?: string;
+  result?: any;
+}
 
 const logger = createLogger("SantriImportService");
 
@@ -226,12 +240,13 @@ export class SantriImportService {
       });
 
       const dbRFIDErrors: ImportError[] = [];
+      const existingRFIDs = await DatabaseService.getExistingRFIDs(
+        validatedRows.map((row) => row.rfid_id),
+      );
+
       for (let idx = 0; idx < validatedRows.length; idx++) {
         const validRow = validatedRows[idx];
-        const rfidExists = await DatabaseService.checkRFIDExists(
-          validRow.rfid_id,
-        );
-        if (rfidExists) {
+        if (existingRFIDs.has(validRow.rfid_id)) {
           dbRFIDErrors.push({
             row: validRow.row_number,
             data: {
@@ -245,8 +260,8 @@ export class SantriImportService {
           });
         }
 
-        // Report progress every 10 rows or at the end
-        if ((idx + 1) % 10 === 0 || idx === validatedRows.length - 1) {
+        // Report progress every 50 rows or at the end
+        if ((idx + 1) % 50 === 0 || idx === validatedRows.length - 1) {
           onProgress?.({
             stage: "checking_db",
             current: idx + 1,
@@ -492,7 +507,7 @@ export class SantriImportService {
   ): Promise<number> {
     if (rows.length === 0) return 0;
 
-    const BATCH_SIZE = 10; // Insert 10 rows at a time
+    const BATCH_SIZE = 200; // Insert 200 rows per batch for better throughput
     let insertedCount = 0;
 
     for (let i = 0; i < rows.length; i += BATCH_SIZE) {

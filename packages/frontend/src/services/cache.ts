@@ -408,10 +408,20 @@ export class FrontendCacheService {
    */
   static clearAll(): void {
     this.store.santri.clear();
+    this.store.last_sync.santri = 0;
     this.clearTodayAttendance();
     if (this.db) {
       const transaction = this.db.transaction([this.STORE_NAME], "readwrite");
       transaction.objectStore(this.STORE_NAME).clear();
     }
+  }
+
+  /**
+   * Clear santri cache only
+   */
+  static async clearSantriCache(): Promise<void> {
+    this.store.santri.clear();
+    this.store.last_sync.santri = 0;
+    await this.saveToIndexedDB();
   }
 }

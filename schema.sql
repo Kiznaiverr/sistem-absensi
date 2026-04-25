@@ -97,6 +97,41 @@ CREATE TABLE IF NOT EXISTS archive_operations (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Santri import background jobs
+CREATE TABLE IF NOT EXISTS santri_import_jobs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  status VARCHAR(20) NOT NULL DEFAULT 'queued', -- queued | processing | completed | failed
+  progress_percent INT NOT NULL DEFAULT 0 CHECK (progress_percent >= 0 AND progress_percent <= 100),
+  total_rows INT NOT NULL DEFAULT 0,
+  processed_rows INT NOT NULL DEFAULT 0,
+  success_count INT NOT NULL DEFAULT 0,
+  error_count INT NOT NULL DEFAULT 0,
+  stage VARCHAR(30),
+  message TEXT,
+  file_name VARCHAR(255) NOT NULL,
+  file_path TEXT NOT NULL,
+  created_by UUID REFERENCES admins(id) ON DELETE SET NULL,
+  created_by_email VARCHAR(255),
+  started_at TIMESTAMP WITH TIME ZONE,
+  finished_at TIMESTAMP WITH TIME ZONE,
+  expires_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS santri_import_errors (
+  id BIGSERIAL PRIMARY KEY,
+  job_id UUID NOT NULL REFERENCES santri_import_jobs(id) ON DELETE CASCADE,
+  row_number INT NOT NULL,
+  name VARCHAR(255) DEFAULT '',
+  rfid_id VARCHAR(255) DEFAULT '',
+  class_name VARCHAR(255) DEFAULT '',
+  error_type VARCHAR(100) NOT NULL,
+  message TEXT NOT NULL,
+  severity VARCHAR(20) NOT NULL DEFAULT 'error',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for performance
 CREATE INDEX idx_classes_school_type ON classes(school_type);
 CREATE INDEX idx_classes_grade ON classes(grade);
@@ -127,6 +162,12 @@ CREATE INDEX idx_archive_santri_date ON attendance_logs_archive(santri_id, date)
 -- Archive operations index
 CREATE INDEX idx_archive_ops_date ON archive_operations(archive_date DESC);
 CREATE INDEX idx_archive_ops_status ON archive_operations(status);
+
+-- Import jobs indexes
+CREATE INDEX idx_import_jobs_status_created_at ON santri_import_jobs(status, created_at);
+CREATE INDEX idx_import_jobs_expires_at ON santri_import_jobs(expires_at);
+CREATE INDEX idx_import_jobs_created_by ON santri_import_jobs(created_by, created_at DESC);
+CREATE INDEX idx_import_errors_job_id ON santri_import_errors(job_id);
 
 -- Seed Classes
 INSERT INTO classes (name, school_type, grade) VALUES

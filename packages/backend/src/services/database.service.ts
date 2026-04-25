@@ -8,6 +8,42 @@ import { Santri, Class, AttendanceLog, Shift } from "@absensi/shared/types";
 import { createLogger } from "../utils/logger.js";
 
 const logger = createLogger("DatabaseService");
+const UUID_V4_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export interface SantriImportJob {
+  id: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  progress_percent: number;
+  total_rows: number;
+  processed_rows: number;
+  success_count: number;
+  error_count: number;
+  stage: string | null;
+  message: string | null;
+  file_name: string;
+  file_path: string;
+  created_by: string | null;
+  created_by_email: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SantriImportJobError {
+  id: number;
+  job_id: string;
+  row_number: number;
+  name: string;
+  rfid_id: string;
+  class_name: string;
+  error_type: string;
+  message: string;
+  severity: "error" | "warning";
+  created_at: string;
+}
 
 export class DatabaseService {
   /**
@@ -876,6 +912,331 @@ export class DatabaseService {
       return existingRFIDs;
     } catch (error) {
       logger.error("Failed to get existing RFIDs", { rfidIds, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Create santri import background job
+   */
+  static async createSantriImportJob(input: {
+    fileName: string;
+    filePath: string;
+    createdBy?: string;
+    createdByEmail?: string;
+  }): Promise<SantriImportJob> {
+    try {
+      const { data, error } = await supabaseClient
+        .from("santri_import_jobs")
+        .insert({
+          status: "queued",
+          file_name: input.fileName,
+          file_path: input.filePath,
+          created_by: input.createdBy || null,
+          created_by_email: input.createdByEmail || null,
+        })
+        .select("*")
+        .single();
+
+      if (error) throw error;
+      return data as SantriImportJob;
+    } catch (error) {
+      logger.error("Failed to create santri import job", { input, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get santri import job by id
+   */
+  static async getSantriImportJobById(
+    jobId: string,
+  ): Promise<SantriImportJob | null> {
+    try {
+      if (!UUID_V4_PATTERN.test(jobId)) {
+        return null;
+      }
+
+      const { data, error } = await supabaseClient
+        .from("santri_import_jobs")
+        .select("*")
+        .eq("id", jobId)
+        .single();
+
+      if (error && error.code !== "PGRST116") throw error;
+      return (data as SantriImportJob) || null;
+    } catch (error) {
+      logger.error("Failed to get santri import job", { jobId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Claim next queued import job for processing
+   */
+  static async claimNextQueuedSantriImportJob(): Promise<SantriImportJob | null> {
+    try {
+      const { data: nextJob, error: nextJobError } = await supabaseClient
+        .from("santri_import_jobs")
+        .select("id")
+        .eq("status", "queued")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (nextJobError) throw nextJobError;
+      if (!nextJob?.id) return null;
+
+      const { data: claimedJob, error: claimError } = await supabaseClient
+        .from("santri_import_jobs")
+        .update({
+          status: "processing",
+          stage: "parsing",
+          message: "Job diproses di background",
+          started_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", nextJob.id)
+        .eq("status", "queued")
+        .select("*")
+        .maybeSingle();
+
+      if (claimError) throw claimError;
+      return (claimedJob as SantriImportJob) || null;
+    } catch (error) {
+      logger.error("Failed to claim queued import job", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update import job progress
+   */
+  static async updateSantriImportJobProgress(
+    jobId: string,
+    progress: {
+      stage?: string;
+      message?: string;
+      progressPercent?: number;
+      totalRows?: number;
+      processedRows?: number;
+      successCount?: number;
+      errorCount?: number;
+    },
+  ): Promise<void> {
+    try {
+      const payload: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      };
+
+      if (progress.stage !== undefined) payload.stage = progress.stage;
+      if (progress.message !== undefined) payload.message = progress.message;
+      if (progress.progressPercent !== undefined) {
+        payload.progress_percent = Math.max(
+          0,
+          Math.min(100, progress.progressPercent),
+        );
+      }
+      if (progress.totalRows !== undefined)
+        payload.total_rows = progress.totalRows;
+      if (progress.processedRows !== undefined)
+        payload.processed_rows = progress.processedRows;
+      if (progress.successCount !== undefined)
+        payload.success_count = progress.successCount;
+      if (progress.errorCount !== undefined)
+        payload.error_count = progress.errorCount;
+
+      const { error } = await supabaseClient
+        .from("santri_import_jobs")
+        .update(payload)
+        .eq("id", jobId);
+
+      if (error) throw error;
+    } catch (error) {
+      logger.error("Failed to update import job progress", { jobId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Save import row errors for a job
+   */
+  static async saveSantriImportJobErrors(
+    jobId: string,
+    errors: Array<{
+      row: number;
+      name: string;
+      rfid_id: string;
+      class_name: string;
+      error_type: string;
+      message: string;
+      severity: "error" | "warning";
+    }>,
+  ): Promise<void> {
+    try {
+      if (errors.length === 0) return;
+
+      const rows = errors.map((item) => ({
+        job_id: jobId,
+        row_number: item.row,
+        name: item.name || "",
+        rfid_id: item.rfid_id || "",
+        class_name: item.class_name || "",
+        error_type: item.error_type,
+        message: item.message,
+        severity: item.severity,
+      }));
+
+      const { error } = await supabaseClient
+        .from("santri_import_errors")
+        .insert(rows);
+
+      if (error) throw error;
+    } catch (error) {
+      logger.error("Failed to save import job errors", { jobId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Mark import job as completed and schedule expiry
+   */
+  static async completeSantriImportJob(
+    jobId: string,
+    summary: {
+      totalRows: number;
+      processedRows: number;
+      successCount: number;
+      errorCount: number;
+      message: string;
+      ttlMinutes?: number;
+    },
+  ): Promise<void> {
+    try {
+      const now = new Date();
+      const ttlMs = (summary.ttlMinutes ?? 5) * 60 * 1000;
+      const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
+
+      const { error } = await supabaseClient
+        .from("santri_import_jobs")
+        .update({
+          status: "completed",
+          stage: "completed",
+          message: summary.message,
+          progress_percent: 100,
+          total_rows: summary.totalRows,
+          processed_rows: summary.processedRows,
+          success_count: summary.successCount,
+          error_count: summary.errorCount,
+          finished_at: now.toISOString(),
+          expires_at: expiresAt,
+          updated_at: now.toISOString(),
+        })
+        .eq("id", jobId);
+
+      if (error) throw error;
+    } catch (error) {
+      logger.error("Failed to complete import job", { jobId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Mark import job as failed and schedule expiry
+   */
+  static async failSantriImportJob(
+    jobId: string,
+    message: string,
+    ttlMinutes = 5,
+  ): Promise<void> {
+    try {
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000);
+
+      const { error } = await supabaseClient
+        .from("santri_import_jobs")
+        .update({
+          status: "failed",
+          stage: "error",
+          message,
+          finished_at: now.toISOString(),
+          expires_at: expiresAt.toISOString(),
+          updated_at: now.toISOString(),
+        })
+        .eq("id", jobId);
+
+      if (error) throw error;
+    } catch (error) {
+      logger.error("Failed to fail import job", { jobId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * List errors for import job
+   */
+  static async getSantriImportJobErrors(
+    jobId: string,
+  ): Promise<SantriImportJobError[]> {
+    try {
+      if (!UUID_V4_PATTERN.test(jobId)) {
+        return [];
+      }
+
+      const { data, error } = await supabaseClient
+        .from("santri_import_errors")
+        .select("*")
+        .eq("job_id", jobId)
+        .order("row_number", { ascending: true });
+
+      if (error) throw error;
+      return (data as SantriImportJobError[]) || [];
+    } catch (error) {
+      logger.error("Failed to get import job errors", { jobId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get expired import jobs for cleanup
+   */
+  static async getExpiredSantriImportJobs(
+    limit = 200,
+  ): Promise<SantriImportJob[]> {
+    try {
+      const now = new Date().toISOString();
+      const { data, error } = await supabaseClient
+        .from("santri_import_jobs")
+        .select("*")
+        .in("status", ["completed", "failed"])
+        .not("expires_at", "is", null)
+        .lt("expires_at", now)
+        .order("expires_at", { ascending: true })
+        .limit(limit);
+
+      if (error) throw error;
+      return (data as SantriImportJob[]) || [];
+    } catch (error) {
+      logger.error("Failed to get expired import jobs", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Delete import jobs by id (errors table deleted via cascade)
+   */
+  static async deleteSantriImportJobs(jobIds: string[]): Promise<void> {
+    try {
+      if (jobIds.length === 0) return;
+
+      const { error } = await supabaseClient
+        .from("santri_import_jobs")
+        .delete()
+        .in("id", jobIds);
+
+      if (error) throw error;
+    } catch (error) {
+      logger.error("Failed to delete import jobs", { jobIds, error });
       throw error;
     }
   }

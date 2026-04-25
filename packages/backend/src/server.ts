@@ -3,6 +3,7 @@ import env from "./config/env.js";
 import { createLogger, initializeErrorLogging } from "./utils/logger.js";
 import { AttendanceService } from "./services/attendance.service.js";
 import { scheduleArchiveJob } from "./jobs/archive.job.js";
+import { startSantriImportWorker } from "./jobs/santri-import.job.js";
 
 const logger = createLogger("Server");
 
@@ -25,6 +26,9 @@ async function startServer() {
 
     // Initialize archive job scheduler
     scheduleArchiveJob();
+
+    // Initialize santri import background worker
+    startSantriImportWorker();
 
     logger.info("Application initialization complete");
 

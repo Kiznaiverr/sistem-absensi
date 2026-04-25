@@ -1,0 +1,7 @@
+improve import user from excel (change to background job)
+fix number start from 2 on error or succes in import excel
+fix loading in import excel
+update api docs
+remember me
+notification for archive failed
+fully testing

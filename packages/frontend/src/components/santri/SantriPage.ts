@@ -83,7 +83,7 @@ export class SantriPage {
   /**
    * Load santri list and classes
    */
-  private async loadData(): Promise<void> {
+  private async loadData(forceRefresh = false): Promise<void> {
     // Load classes
     this.allClasses = await ApiService.getClasses();
 
@@ -100,6 +100,7 @@ export class SantriPage {
     // Pass filters only if they were actually applied
     this.santriList = await ApiService.getAllSantri(
       Object.keys(filters).length > 0 ? filters : undefined,
+      { bypassCache: forceRefresh },
     );
 
     this.applyFilters();
@@ -499,7 +500,7 @@ export class SantriPage {
    */
   private async handleImportSuccess(): Promise<void> {
     try {
-      await this.loadData();
+      await this.loadData(true);
       this.render();
       this.setupEventListeners();
       this.showSuccess("Data santri berhasil diperbarui");

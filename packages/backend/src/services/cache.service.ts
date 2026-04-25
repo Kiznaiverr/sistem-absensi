@@ -63,6 +63,22 @@ export class CacheService {
   }
 
   /**
+   * Delete all keys matching a prefix
+   */
+  deleteByPrefix(prefix: string): number {
+    let deleted = 0;
+
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) {
+        this.cache.delete(key);
+        deleted++;
+      }
+    }
+
+    return deleted;
+  }
+
+  /**
    * Clear all cache
    */
   clear(): void {

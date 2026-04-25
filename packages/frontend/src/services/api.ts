@@ -252,18 +252,25 @@ export class ApiService {
    * Get all santri with optional filters
    * Uses 5-minute cache to reduce network requests (only when no filters)
    */
-  static async getAllSantri(filters?: {
-    class_id?: string;
-    search?: string;
-    is_active?: boolean;
-  }): Promise<any[]> {
+  static async getAllSantri(
+    filters?: {
+      class_id?: string;
+      search?: string;
+      is_active?: boolean;
+    },
+    options?: {
+      bypassCache?: boolean;
+    },
+  ): Promise<any[]> {
+    const bypassCache = options?.bypassCache === true;
+
     // Only use cache if no meaningful filters
     // Filters are considered "active" only if they have non-default values
     const hasActiveFilters =
       filters &&
       (filters.class_id || filters.search || filters.is_active === false); // Only false is meaningful (show inactive)
 
-    if (!hasActiveFilters) {
+    if (!hasActiveFilters && !bypassCache) {
       const cached = FrontendCacheService.getSantri();
       if (cached && cached.length > 0) {
         console.log(`[Cache HIT] Santri list`);
@@ -275,10 +282,11 @@ export class ApiService {
     if (filters?.class_id) params.append("class_id", filters.class_id);
     if (filters?.search) params.append("search", filters.search);
     if (filters?.is_active === false) params.append("is_active", "false");
+    if (bypassCache) params.append("_ts", Date.now().toString());
 
     const queryStr = params.toString();
     console.log(
-      `[Cache ${hasActiveFilters ? "SKIP" : "MISS"}] Fetching santri from API`,
+      `[Cache ${bypassCache ? "BYPASS" : hasActiveFilters ? "SKIP" : "MISS"}] Fetching santri from API`,
     );
     const response = await this.request<ApiResponse>(
       "GET",
@@ -403,14 +411,20 @@ export class ApiService {
   }
 
   /**
-   * POST /api/santri/import
-   * Import santri from Excel file
+   * POST /api/santri/import-jobs
+   * Create background import job
    */
-  static async importSantriFromExcel(file: File): Promise<any> {
+  static async createSantriImportJob(file: File): Promise<{
+    job_id: string;
+    status: string;
+    progress_percent: number;
+    created_at: string;
+    expires_at?: string | null;
+  }> {
     const formData = new FormData();
     formData.append("file", file);
 
-    const url = `${API_BASE_URL}/santri/import`;
+    const url = `${API_BASE_URL}/santri/import-jobs`;
 
     try {
       const response = await AuthService.fetch(url, {
@@ -424,7 +438,8 @@ export class ApiService {
         throw new Error(error.error || `HTTP ${response.status}`);
       }
 
-      return response.json();
+      const payload = await response.json();
+      return payload.data;
     } catch (error) {
       if (
         error instanceof Error &&
@@ -437,66 +452,93 @@ export class ApiService {
   }
 
   /**
-   * POST /api/santri/import with real-time progress
-   * Returns EventSource for SSE streaming
+   * GET /api/santri/import-jobs/:jobId/progress
+   * Subscribe to background import progress stream
    */
-  static importSantriWithProgress(
-    file: File,
-    sessionId: string,
-    onProgress: (event: any) => void,
-  ): { promise: Promise<any>; eventSource: EventSource } {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const url = `${API_BASE_URL}/santri/import?sessionId=${sessionId}`;
-
-    // Create EventSource for progress tracking
+  static subscribeSantriImportProgress(jobId: string): EventSource {
     const eventSource = new EventSource(
-      `${API_BASE_URL}/santri/import-progress/${sessionId}`,
+      `${API_BASE_URL}/santri/import-jobs/${jobId}/progress`,
     );
 
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        onProgress(data);
-      } catch (e) {
-        console.error("Failed to parse SSE message", e);
+    return eventSource;
+  }
+
+  /**
+   * GET /api/santri/import-jobs/:jobId
+   * Get import job status
+   */
+  static async getSantriImportJob(jobId: string): Promise<{
+    job_id: string;
+    status: "queued" | "processing" | "completed" | "failed";
+    stage: string | null;
+    message: string | null;
+    progress_percent: number;
+    total_rows: number;
+    processed_rows: number;
+    success_count: number;
+    error_count: number;
+    created_at: string;
+    started_at?: string | null;
+    finished_at?: string | null;
+    expires_at?: string | null;
+  }> {
+    const response = await this.request<ApiResponse>(
+      "GET",
+      `/santri/import-jobs/${jobId}`,
+    );
+    return response.data!;
+  }
+
+  /**
+   * GET /api/santri/import-jobs/:jobId/errors
+   * Get import row-level errors
+   */
+  static async getSantriImportJobErrors(jobId: string): Promise<any[]> {
+    const response = await this.request<ApiResponse>(
+      "GET",
+      `/santri/import-jobs/${jobId}/errors`,
+    );
+    return response.data || [];
+  }
+
+  /**
+   * GET /api/santri/import-jobs/:jobId/errors/export
+   * Download import error rows as Excel
+   */
+  static async exportSantriImportErrors(jobId: string): Promise<void> {
+    const url = `${API_BASE_URL}/santri/import-jobs/${jobId}/errors/export`;
+
+    try {
+      const response = await AuthService.fetch(url);
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || `HTTP ${response.status}`);
       }
-    };
 
-    eventSource.onerror = (error) => {
-      console.error("SSE connection error", error);
-      eventSource.close();
-    };
-
-    // Upload file after SSE connection is ready
-    const promise = (async () => {
-      try {
-        const response = await AuthService.fetch(url, {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({}));
-          throw new Error(error.error || `HTTP ${response.status}`);
-        }
-
-        return response.json();
-      } catch (error) {
-        if (
-          error instanceof Error &&
-          error.message === "No authentication token"
-        ) {
-          window.location.href = "/";
-        }
-        throw error;
-      } finally {
-        // Close EventSource after import completes
-        eventSource.close();
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `import-errors-${jobId}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "No authentication token"
+      ) {
+        window.location.href = "/";
       }
-    })();
+      throw error;
+    }
+  }
 
-    return { promise, eventSource };
+  /**
+   * Clear frontend santri cache so next fetch reflects latest import.
+   */
+  static async invalidateSantriCache(): Promise<void> {
+    return FrontendCacheService.clearSantriCache();
   }
 }

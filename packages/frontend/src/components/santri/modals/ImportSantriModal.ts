@@ -42,6 +42,7 @@ export class ImportSantriModal {
   private importResult: ImportResult | null = null;
   private selectedFile: File | null = null;
   private isProcessing = false;
+  private currentJobId: string | null = null;
 
   constructor(props: ImportSantriModalProps) {
     this.props = props;
@@ -321,6 +322,17 @@ export class ImportSantriModal {
               Tutup
             </button>
             ${
+              hasErrors && this.currentJobId
+                ? `
+              <button 
+                id="btn-export-errors"
+                class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors text-sm">
+                Export Error
+              </button>
+            `
+                : ""
+            }
+            ${
               summary.imported > 0
                 ? `
               <button 
@@ -437,6 +449,7 @@ export class ImportSantriModal {
   private setupResultViewEventListeners(): void {
     const closeBtn = document.getElementById("btn-close");
     const refreshBtn = document.getElementById("btn-refresh-table");
+    const exportErrorsBtn = document.getElementById("btn-export-errors");
     const backdrop = document.getElementById("modal-backdrop");
 
     if (closeBtn) {
@@ -447,6 +460,19 @@ export class ImportSantriModal {
       refreshBtn.addEventListener("click", () => {
         this.hide();
         this.props.onImportSuccess();
+      });
+    }
+
+    if (exportErrorsBtn) {
+      exportErrorsBtn.addEventListener("click", async () => {
+        if (!this.currentJobId) return;
+        try {
+          await ApiService.exportSantriImportErrors(this.currentJobId);
+        } catch (error) {
+          const msg =
+            error instanceof Error ? error.message : "Gagal export error";
+          this.showToast(msg, "error");
+        }
       });
     }
 
@@ -532,55 +558,88 @@ export class ImportSantriModal {
         progressContainer.classList.remove("hidden");
       }
 
-      // Generate unique session ID for this import
-      const sessionId = `import-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const job = await ApiService.createSantriImportJob(this.selectedFile);
+      this.currentJobId = job.job_id;
 
-      // Start import with SSE progress tracking
-      const { promise } = ApiService.importSantriWithProgress(
-        this.selectedFile,
-        sessionId,
-        (event) => {
-          // Update progress bar and percentage
-          if (event.percentage !== undefined) {
-            if (progressBar) {
-              progressBar.style.width = `${event.percentage}%`;
-            }
-            if (progressText) {
-              progressText.textContent = `${event.percentage}%`;
-            }
-          }
+      if (!this.currentJobId) {
+        throw new Error("Job import tidak valid (job_id kosong)");
+      }
 
-          // Update label based on stage
-          if (event.stage && progressLabel) {
-            const stageLabel: Record<string, string> = {
-              parsing: "📁 Membaca file Excel...",
-              validating: "✓ Validasi data...",
-              checking_db: "🔍 Cek duplikat di database...",
-              inserting: "💾 Menyimpan ke database...",
-              completed: "✓ Selesai!",
-              error: "❌ Terjadi kesalahan",
-            };
-            progressLabel.textContent =
-              stageLabel[event.stage] || "Memproses...";
-          }
+      const stageLabel: Record<string, string> = {
+        parsing: "Membaca file Excel...",
+        validating: "Validasi data...",
+        checking_db: "Cek duplikat di database...",
+        inserting: "Menyimpan ke database...",
+        completed: "Selesai",
+        error: "Terjadi kesalahan",
+      };
 
-          // Update detailed message
-          if (event.message && progressMessage) {
-            progressMessage.textContent = event.message;
-          }
-
-          // Log progress stages
-          if (event.stage && event.message) {
-            console.log(`[${event.stage}] ${event.message}`);
-          }
-        },
+      const eventSource = ApiService.subscribeSantriImportProgress(
+        this.currentJobId,
       );
 
-      // Wait for import to complete
-      const result = await promise;
+      const result = await new Promise<ImportResult>((resolve, reject) => {
+        eventSource.onmessage = async (rawEvent) => {
+          try {
+            const event = JSON.parse(rawEvent.data);
 
-      // Store result and show result view
+            if (event.percentage !== undefined) {
+              if (progressBar) progressBar.style.width = `${event.percentage}%`;
+              if (progressText)
+                progressText.textContent = `${event.percentage}%`;
+            }
+
+            if (event.stage && progressLabel) {
+              progressLabel.textContent =
+                stageLabel[event.stage] || "Memproses...";
+            }
+
+            if (event.message && progressMessage) {
+              progressMessage.textContent = event.message;
+            }
+
+            if (event.type === "closed") {
+              eventSource.close();
+              const jobStatus = await ApiService.getSantriImportJob(
+                this.currentJobId!,
+              );
+              const errors = await ApiService.getSantriImportJobErrors(
+                this.currentJobId!,
+              );
+
+              resolve({
+                success: jobStatus.status === "completed",
+                summary: {
+                  total_rows: jobStatus.total_rows,
+                  imported: jobStatus.success_count,
+                  skipped: Math.max(
+                    0,
+                    jobStatus.total_rows - jobStatus.success_count,
+                  ),
+                  imported_at:
+                    jobStatus.finished_at || new Date().toISOString(),
+                },
+                errors,
+              });
+            }
+          } catch (error) {
+            reject(error);
+          }
+        };
+
+        eventSource.onerror = () => {
+          eventSource.close();
+          reject(new Error("Koneksi progress import terputus"));
+        };
+      });
+
       this.importResult = result;
+
+      // Invalidate santri cache so table reload always gets fresh data.
+      if (result.success) {
+        await ApiService.invalidateSantriCache();
+      }
+
       this.render();
     } catch (error) {
       console.error("Import failed", error);
