@@ -721,30 +721,48 @@ export class DatabaseService {
     search?: string;
   }): Promise<Santri[]> {
     try {
-      let query = supabaseClient
-        .from("santri")
-        .select("*, classes(*)")
-        .order("name", { ascending: true });
+      const pageSize = 500;
+      let offset = 0;
+      const allSantri: Santri[] = [];
 
-      if (filters?.classId) {
-        query = query.eq("class_id", filters.classId);
+      while (true) {
+        let query = supabaseClient
+          .from("santri")
+          .select("*, classes(*)")
+          .order("name", { ascending: true })
+          .order("id", { ascending: true })
+          .range(offset, offset + pageSize - 1);
+
+        if (filters?.classId) {
+          query = query.eq("class_id", filters.classId);
+        }
+
+        if (filters?.isActive !== undefined) {
+          query = query.eq("is_active", filters.isActive);
+        }
+
+        // Search by name or RFID
+        if (filters?.search) {
+          query = query.or(
+            `name.ilike.%${filters.search}%,rfid_id.ilike.%${filters.search}%`,
+          );
+        }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        const pageData = data || [];
+        allSantri.push(...(pageData as Santri[]));
+
+        if (pageData.length < pageSize) {
+          break;
+        }
+
+        offset += pageSize;
       }
 
-      if (filters?.isActive !== undefined) {
-        query = query.eq("is_active", filters.isActive);
-      }
-
-      // Search by name or RFID
-      if (filters?.search) {
-        query = query.or(
-          `name.ilike.%${filters.search}%,rfid_id.ilike.%${filters.search}%`,
-        );
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-      return data || [];
+      return allSantri;
     } catch (error) {
       logger.error("Failed to get all santri", { filters, error });
       throw error;
