@@ -25,6 +25,45 @@ API ini menyediakan endpoint untuk:
 - Backend juga support Authorization header: `Authorization: Bearer <token>` (backward compatibility)
 - Frontend HARUS set `credentials: 'include'` dalam fetch requests untuk HttpOnly cookies bekerja
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Rate Limiting](#rate-limiting)
+- [Error Response Format](#error-response-format)
+- [Error Codes](#error-codes)
+- [Token Information (HttpOnly Cookies)](#token-information-httponly-cookies)
+- [Endpoints](#endpoints)
+  - [Authentication](#authentication)
+    - [1. Login](#1-login)
+    - [2. Refresh Token](#2-refresh-token)
+    - [3. Logout](#3-logout)
+  - [Attendance Management](#attendance-management)
+    - [4. Batch RFID Scan](#4-batch-rfid-scan)
+    - [5. Today Summary](#5-today-summary)
+    - [6. Monthly Attendance](#6-monthly-attendance)
+    - [7. Available Months](#7-available-months)
+    - [8. Export Attendance Data (JSON)](#8-export-attendance-data-json)
+  - [Classes and Santri Management](#classes-and-santri-management)
+    - [9. Get All Classes](#9-get-all-classes)
+    - [10. Get Santri by Class](#10-get-santri-by-class)
+    - [11. Get All Santri (Optional Filters)](#11-get-all-santri-optional-filters)
+    - [12. Reinitialize Cache (Debug)](#12-reinitialize-cache-debug)
+  - [Santri Import Background Job](#santri-import-background-job)
+    - [13. Download Santri Import Template](#13-download-santri-import-template)
+    - [14. Create Import Job](#14-create-import-job)
+    - [15. Get Import Job Status](#15-get-import-job-status)
+    - [16. Subscribe Import Progress (SSE)](#16-subscribe-import-progress-sse)
+    - [17. Get Import Error Rows](#17-get-import-error-rows)
+    - [18. Export Import Errors (Excel)](#18-export-import-errors-excel)
+  - [Administrative](#administrative)
+    - [19. Health Check](#19-health-check)
+    - [20. System Statistics](#20-system-statistics)
+    - [21. Archive Status](#21-archive-status)
+    - [22. Archive History](#22-archive-history)
+- [Shift Configuration](#shift-configuration)
+- [Response Codes](#response-codes)
+- [Database Schema](#database-schema)
+
 ## Rate Limiting
 
 API implements the following rate limits to protect endpoints:
@@ -92,7 +131,7 @@ Semua error response mengikuti format berikut:
 
 ## Token Information (HttpOnly Cookies)
 
-### Security Implementation 
+### Security Implementation
 
 - **Storage:** Access & Refresh tokens dalam **HttpOnly cookies** (tidak accessible via JavaScript)
 - **Flags:**
@@ -301,18 +340,37 @@ const data = await response.json();
 // expires_in untuk schedule next refresh
 ```
 
-"success": true,
-"message": "Logout successful"
-}
+---
 
-````
+#### 3. Logout
+
+```
+POST /api/auth/logout
+```
+
+**Deskripsi:** Logout admin dan hapus session token (HttpOnly cookies). Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (Success - HTTP 200):**
+
+```json
+{
+  "success": true,
+  "message": "Logout successful"
+}
+```
 
 **cURL:**
 
 ```bash
 curl -X POST http://localhost:5000/api/auth/logout \
   -H "Authorization: Bearer <access_token>"
-````
+```
 
 ---
 
@@ -779,7 +837,66 @@ curl -X GET http://localhost:5000/api/classes/uuid-smp1/santri \
 
 ---
 
-#### 11. Reinitialize Cache (Debug)
+#### 11. Get All Santri (Optional Filters)
+
+```
+GET /api/santri
+```
+
+**Deskripsi:** Get semua santri (aktif/non-aktif) dengan filter opsional. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Query Parameters:**
+
+- `class_id` (string, optional): Filter berdasarkan UUID kelas
+- `search` (string, optional): Search `name` atau `rfid_id` (case-insensitive)
+- `is_active` (boolean, optional): Filter status aktif (`true` atau `false`)
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid-001",
+      "rfid_id": "RFD001001",
+      "name": "Ahmad Fadli",
+      "class_id": "uuid-smp1",
+      "is_active": true,
+      "created_at": "2026-04-01T00:00:00Z",
+      "classes": {
+        "id": "uuid-smp1",
+        "name": "SMP-1",
+        "school_type": "SMP",
+        "grade": 1
+      }
+    }
+  ],
+  "total": 1
+}
+```
+
+**Implementation Note:**
+
+- Endpoint tetap mengembalikan satu array penuh agar kompatibel dengan frontend existing.
+- Di backend, query ke Supabase dieksekusi bertahap (chunk) **500 rows per query** untuk menghindari limit default row retrieval pada satu query besar.
+
+**cURL:**
+
+```bash
+curl -X GET "http://localhost:5000/api/santri?is_active=true&search=ahmad" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
+#### 12. Reinitialize Cache (Debug)
 
 ```
 POST /api/classes/init-cache
@@ -818,7 +935,7 @@ curl -X POST http://localhost:5000/api/classes/init-cache \
 
 ### Santri Import Background Job
 
-#### 12. Download Santri Import Template
+#### 13. Download Santri Import Template
 
 ```
 GET /api/santri/template
@@ -844,7 +961,7 @@ curl -X GET http://localhost:5000/api/santri/template \
 
 ---
 
-#### 13. Create Import Job
+#### 14. Create Import Job
 
 ```
 POST /api/santri/import-jobs
@@ -894,7 +1011,7 @@ curl -X POST http://localhost:5000/api/santri/import-jobs \
 
 ---
 
-#### 14. Get Import Job Status
+#### 15. Get Import Job Status
 
 ```
 GET /api/santri/import-jobs/:jobId
@@ -938,7 +1055,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-#### 15. Subscribe Import Progress (SSE)
+#### 16. Subscribe Import Progress (SSE)
 
 ```
 GET /api/santri/import-jobs/:jobId/progress
@@ -971,7 +1088,7 @@ Accept: text/event-stream
 
 ---
 
-#### 16. Get Import Error Rows
+#### 17. Get Import Error Rows
 
 ```
 GET /api/santri/import-jobs/:jobId/errors
@@ -1008,7 +1125,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-#### 17. Export Import Errors (Excel)
+#### 18. Export Import Errors (Excel)
 
 ```
 GET /api/santri/import-jobs/:jobId/errors/export
@@ -1036,7 +1153,7 @@ curl -X GET http://localhost:5000/api/santri/import-jobs/<job-id>/errors/export 
 
 ### Administrative
 
-#### 18. Health Check
+#### 19. Health Check
 
 ```
 GET /health
@@ -1061,7 +1178,7 @@ curl -X GET http://localhost:5000/health
 
 ---
 
-#### 19. System Statistics
+#### 20. System Statistics
 
 ```
 GET /api/admin/stats
@@ -1114,7 +1231,7 @@ curl -X GET http://localhost:5000/api/admin/stats \
 
 ---
 
-#### 20. Archive Status
+#### 21. Archive Status
 
 ```
 GET /api/admin/archive/status
@@ -1153,7 +1270,7 @@ curl -X GET http://localhost:5000/api/admin/archive/status \
 
 ---
 
-#### 21. Archive History
+#### 22. Archive History
 
 ```
 GET /api/admin/archive/history
