@@ -10,6 +10,7 @@ import { SantriSidebar } from "./SantriSidebar";
 import { AddSantriModal } from "./modals/AddSantriModal";
 import { EditSantriModal } from "./modals/EditSantriModal";
 import { DeleteSantriModal } from "./modals/DeleteSantriModal";
+import { ImportSantriModal } from "./modals/ImportSantriModal";
 
 export interface Santri {
   id: string;
@@ -52,6 +53,7 @@ export class SantriPage {
   private addModal: AddSantriModal | null = null;
   private editModal: EditSantriModal | null = null;
   private deleteModal: DeleteSantriModal | null = null;
+  private importModal: ImportSantriModal | null = null;
 
   constructor(containerId: string) {
     this.containerId = containerId;
@@ -171,14 +173,21 @@ export class SantriPage {
         <!-- Main Content -->
         <div id="main-content" class="flex-1">
           <div class="bg-white rounded-lg shadow-md p-5 border border-gray-200/50">
-            <!-- Header with Add Button -->
+            <!-- Header with Buttons -->
             <div class="flex justify-between items-center mb-4">
               <h2 class="text-xl font-bold text-gray-900">Manajemen Santri</h2>
-              <button 
-                id="btn-add-santri"
-                class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium transition-colors">
-                + Tambah Santri
-              </button>
+              <div class="flex gap-2">
+                <button 
+                  id="btn-import-santri"
+                  class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors">
+                  Import dari Excel
+                </button>
+                <button 
+                  id="btn-add-santri"
+                  class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium transition-colors">
+                  + Tambah Santri
+                </button>
+              </div>
             </div>
 
             <!-- Table Container -->
@@ -191,6 +200,7 @@ export class SantriPage {
       <div id="add-modal-container"></div>
       <div id="edit-modal-container"></div>
       <div id="delete-modal-container"></div>
+      <div id="import-modal-container"></div>
 
       <!-- Error Toast -->
       <div id="error-toast" class="hidden fixed bottom-4 right-4 bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg"></div>
@@ -258,6 +268,14 @@ export class SantriPage {
       onConfirm: () => this.handleConfirmDelete(),
       onCancel: () => this.closeDeleteModal(),
     });
+
+    // Initialize import modal
+    this.importModal = new ImportSantriModal({
+      containerId: "import-modal-container",
+      classes: this.allClasses,
+      onImportSuccess: () => this.handleImportSuccess(),
+      onCancel: () => this.closeImportModal(),
+    });
   }
 
   /**
@@ -267,6 +285,12 @@ export class SantriPage {
     document.getElementById("btn-add-santri")?.addEventListener("click", () => {
       this.addModal?.show();
     });
+
+    document
+      .getElementById("btn-import-santri")
+      ?.addEventListener("click", () => {
+        this.importModal?.show();
+      });
   }
 
   /**
@@ -461,6 +485,28 @@ export class SantriPage {
   private closeDeleteModal(): void {
     this.deleteModal?.hide();
     this.selectedSantri = null;
+  }
+
+  /**
+   * Close import modal
+   */
+  private closeImportModal(): void {
+    this.importModal?.hide();
+  }
+
+  /**
+   * Handle import success - reload data
+   */
+  private async handleImportSuccess(): Promise<void> {
+    try {
+      await this.loadData();
+      this.render();
+      this.setupEventListeners();
+      this.showSuccess("Data santri berhasil diperbarui");
+    } catch (error) {
+      console.error("Failed to reload data after import", error);
+      this.showError("Gagal memperbarui data santri");
+    }
   }
 
   /**

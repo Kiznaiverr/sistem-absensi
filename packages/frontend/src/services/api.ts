@@ -366,4 +366,137 @@ export class ApiService {
     );
     return response.data;
   }
+
+  /**
+   * GET /api/santri/template
+   * Download Excel template for import
+   */
+  static async downloadSantriTemplate(): Promise<void> {
+    const url = `${API_BASE_URL}/santri/template`;
+
+    try {
+      const response = await AuthService.fetch(url);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      // Get blob and create download link
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = "template_santri.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "No authentication token"
+      ) {
+        window.location.href = "/";
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * POST /api/santri/import
+   * Import santri from Excel file
+   */
+  static async importSantriFromExcel(file: File): Promise<any> {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const url = `${API_BASE_URL}/santri/import`;
+
+    try {
+      const response = await AuthService.fetch(url, {
+        method: "POST",
+        body: formData,
+        // Don't set Content-Type header, let browser set it with boundary
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || `HTTP ${response.status}`);
+      }
+
+      return response.json();
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "No authentication token"
+      ) {
+        window.location.href = "/";
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * POST /api/santri/import with real-time progress
+   * Returns EventSource for SSE streaming
+   */
+  static importSantriWithProgress(
+    file: File,
+    sessionId: string,
+    onProgress: (event: any) => void,
+  ): { promise: Promise<any>; eventSource: EventSource } {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const url = `${API_BASE_URL}/santri/import?sessionId=${sessionId}`;
+
+    // Create EventSource for progress tracking
+    const eventSource = new EventSource(
+      `${API_BASE_URL}/santri/import-progress/${sessionId}`,
+    );
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onProgress(data);
+      } catch (e) {
+        console.error("Failed to parse SSE message", e);
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error("SSE connection error", error);
+      eventSource.close();
+    };
+
+    // Upload file after SSE connection is ready
+    const promise = (async () => {
+      try {
+        const response = await AuthService.fetch(url, {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.error || `HTTP ${response.status}`);
+        }
+
+        return response.json();
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message === "No authentication token"
+        ) {
+          window.location.href = "/";
+        }
+        throw error;
+      } finally {
+        // Close EventSource after import completes
+        eventSource.close();
+      }
+    })();
+
+    return { promise, eventSource };
+  }
 }

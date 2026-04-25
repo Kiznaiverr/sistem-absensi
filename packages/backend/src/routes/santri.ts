@@ -2,6 +2,8 @@
  * Santri Management Routes
  * POST /api/santri - Add new santri
  * GET /api/santri - Get all santri with filters
+ * GET /api/santri/template - Download import template
+ * POST /api/santri/import - Bulk import santri from Excel
  * GET /api/santri/:santriId - Get santri by ID
  * PUT /api/santri/:santriId - Update santri
  * PATCH /api/santri/:santriId/rfid - Update santri RFID
@@ -12,7 +14,11 @@
 
 import { Router, Request, Response, NextFunction } from "express";
 import type { Router as ExpressRouter } from "express";
+import multer, { MulterError } from "multer";
 import { DatabaseService } from "../services/database.service.js";
+import { SantriImportService } from "../services/santri-import.service.js";
+import { SantriTemplateService } from "../services/santri-template.service.js";
+import { ImportProgressService } from "../services/import-progress.service.js";
 import { AuditService } from "../utils/audit.js";
 import { createLogger } from "../utils/logger.js";
 import {
@@ -22,8 +28,42 @@ import {
   handleValidationErrors,
 } from "../middleware/validation.middleware.js";
 
+// Extend Express Request to include file from multer
+declare global {
+  namespace Express {
+    interface Request {
+      file?: Express.Multer.File;
+    }
+  }
+}
+
 const router: ExpressRouter = Router();
 const logger = createLogger("SantriRoutes");
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 25 * 1024 * 1024, // 25MB
+  },
+  fileFilter: (
+    req: Request,
+    file: Express.Multer.File,
+    cb: multer.FileFilterCallback,
+  ) => {
+    // Accept only Excel files
+    const excelMimes = [
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-excel",
+    ];
+
+    if (excelMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Berkas harus format Excel (.xlsx atau .xls)"));
+    }
+  },
+});
 
 /**
  * Helper function to get client IP address
@@ -150,6 +190,190 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
     next(error);
   }
 });
+
+/**
+ * GET /api/santri/template
+ * Download Excel template for bulk import
+ */
+router.get(
+  "/template",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const templateBuffer = await SantriTemplateService.generateTemplate();
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader(
+        "Content-Disposition",
+        'attachment; filename="template_santri.xlsx"',
+      );
+      res.setHeader("Content-Length", templateBuffer.byteLength);
+
+      res.send(Buffer.from(templateBuffer));
+    } catch (error) {
+      logger.error("Error generating template", error);
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /api/santri/import-progress/:sessionId
+ * Server-Sent Events (SSE) endpoint for real-time import progress
+ */
+router.get(
+  "/import-progress/:sessionId",
+  async (req: Request, res: Response, next: NextFunction) => {
+    // Disable timeout for SSE connection (long-lived)
+    req.setTimeout(0);
+    res.setTimeout(0);
+
+    const { sessionId } = req.params;
+
+    // Validate session exists
+    if (!ImportProgressService.hasSession(sessionId)) {
+      return res.status(404).json({
+        success: false,
+        error: "Session not found",
+        error_code: "SESSION_NOT_FOUND",
+      });
+    }
+
+    // Set SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    // Send initial connection message
+    res.write(`data: ${JSON.stringify({ type: "connected", sessionId })}\n\n`);
+
+    // Send existing events
+    const session = ImportProgressService.getSession(sessionId);
+    if (session) {
+      for (const event of session.events) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+    }
+
+    // Keep connection open and send new events as they arrive
+    const interval = setInterval(() => {
+      const lastEvent = ImportProgressService.getLastEvent(sessionId);
+      if (lastEvent) {
+        res.write(`data: ${JSON.stringify(lastEvent)}\n\n`);
+      }
+
+      // Close if import is complete or error
+      const sess = ImportProgressService.getSession(sessionId);
+      if (sess?.isComplete) {
+        clearInterval(interval);
+        res.write(`data: ${JSON.stringify({ type: "closed" })}\n\n`);
+        res.end();
+      }
+    }, 100); // Check every 100ms
+
+    // Cleanup on client disconnect
+    req.on("close", () => {
+      clearInterval(interval);
+      res.end();
+    });
+  },
+);
+
+/**
+ * POST /api/santri/import
+ * Import santri from Excel file (Admin only)
+ */
+router.post(
+  "/import",
+  upload.single("file"),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // Validate file was uploaded
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          error: "Berkas tidak ditemukan",
+          error_code: "NO_FILE_UPLOADED",
+        });
+      }
+
+      const sessionId = req.query.sessionId as string | undefined;
+      const adminId = (req as any).user?.admin_id;
+      const adminEmail = (req as any).user?.email;
+      const clientIp = getClientIp(req);
+      const userAgent = getUserAgent(req);
+
+      logger.info(`Starting import for admin: ${adminEmail}`, {
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        sessionId,
+      });
+
+      // Create progress session if provided
+      if (sessionId) {
+        ImportProgressService.createSession(sessionId);
+      }
+
+      // Process import with progress tracking
+      const result = await SantriImportService.importFromExcel(
+        req.file.buffer,
+        adminId,
+        adminEmail,
+        sessionId
+          ? (event) => ImportProgressService.addEvent(sessionId, event)
+          : undefined,
+      );
+
+      // Audit log for successful import
+      if (result.summary.imported > 0) {
+        await AuditService.log("SANTRI_BULK_IMPORT", {
+          admin_id: adminId,
+          admin_email: adminEmail,
+          total_rows: result.summary.total_rows,
+          imported_count: result.summary.imported,
+          skipped_count: result.summary.skipped,
+          file_name: req.file.originalname,
+          file_size: req.file.size,
+          error_count: result.errors.length,
+          ip: clientIp,
+          user_agent: userAgent,
+        });
+      }
+
+      logger.info(`Import completed`, {
+        total: result.summary.total_rows,
+        imported: result.summary.imported,
+        skipped: result.summary.skipped,
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      logger.error("Error importing santri", error);
+
+      // Handle specific multer errors
+      if (error.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({
+          success: false,
+          error: "Berkas terlalu besar (max 25MB)",
+          error_code: "FILE_TOO_LARGE",
+        });
+      }
+
+      if (error.message.includes("format Excel")) {
+        return res.status(400).json({
+          success: false,
+          error: "Berkas harus format Excel (.xlsx atau .xls)",
+          error_code: "INVALID_FILE_FORMAT",
+        });
+      }
+
+      next(error);
+    }
+  },
+);
 
 /**
  * GET /api/santri/:santriId

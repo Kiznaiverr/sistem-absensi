@@ -648,6 +648,35 @@ export class DatabaseService {
   }
 
   /**
+   * Bulk create santri (batch insert)
+   */
+  static async bulkCreateSantri(
+    santris: Array<{ name: string; rfid_id: string; class_id: string }>,
+  ): Promise<number> {
+    if (santris.length === 0) return 0;
+
+    try {
+      const { error } = await supabaseClient.from("santri").insert(
+        santris.map((s) => ({
+          name: s.name,
+          rfid_id: s.rfid_id,
+          class_id: s.class_id,
+          is_active: true,
+        })),
+      );
+
+      if (error) throw error;
+      return santris.length;
+    } catch (error) {
+      logger.error("Failed to bulk create santri", {
+        count: santris.length,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Get all santri with optional filters
    */
   static async getAllSantri(filters?: {
@@ -811,6 +840,42 @@ export class DatabaseService {
       return (data?.length || 0) > 0;
     } catch (error) {
       logger.error("Failed to check RFID exists", { rfidId, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get all existing RFID IDs for a given list
+   */
+  static async getExistingRFIDs(rfidIds: string[]): Promise<Set<string>> {
+    try {
+      const uniqueRFIDs = Array.from(new Set(rfidIds.filter(Boolean)));
+      if (uniqueRFIDs.length === 0) {
+        return new Set();
+      }
+
+      const existingRFIDs = new Set<string>();
+      const chunkSize = 500;
+
+      for (let i = 0; i < uniqueRFIDs.length; i += chunkSize) {
+        const chunk = uniqueRFIDs.slice(i, i + chunkSize);
+        const { data, error } = await supabaseClient
+          .from("santri")
+          .select("rfid_id")
+          .in("rfid_id", chunk);
+
+        if (error) throw error;
+
+        for (const row of data || []) {
+          if (row.rfid_id) {
+            existingRFIDs.add(row.rfid_id);
+          }
+        }
+      }
+
+      return existingRFIDs;
+    } catch (error) {
+      logger.error("Failed to get existing RFIDs", { rfidIds, error });
       throw error;
     }
   }

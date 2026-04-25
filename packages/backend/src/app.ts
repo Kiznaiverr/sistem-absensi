@@ -135,10 +135,10 @@ const apiLimiter = rateLimit({
 
 /**
  * Request timeout middleware
- * Set 30 second timeout for all requests
+ * Set 5 minute timeout for all requests (for large file imports)
  */
 app.use((_req: Request, res: Response, next: NextFunction) => {
-  res.setTimeout(30 * 1000, () => {
+  res.setTimeout(5 * 60 * 1000, () => {
     res.status(408).json({
       success: false,
       error: "Request timeout",
