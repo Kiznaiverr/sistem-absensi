@@ -43,6 +43,54 @@ export class AuthService {
   }
 
   /**
+   * Restore session from refresh token cookie when sessionStorage is empty.
+   * This allows users to reopen the app without logging in again while the
+   * refresh token is still valid.
+   */
+  static async restoreSession(): Promise<boolean> {
+    if (this.isRefreshing) {
+      return false;
+    }
+
+    try {
+      this.isRefreshing = true;
+
+      const response = await fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        this.clearAuth();
+        return false;
+      }
+
+      const data = await response.json();
+      const admin = data.data?.admin;
+      const expiresIn = data.data?.expires_in;
+
+      if (!admin || !expiresIn) {
+        this.clearAuth();
+        return false;
+      }
+
+      this.saveAdmin(admin);
+      this.scheduleTokenRefresh(expiresIn);
+
+      return true;
+    } catch (error) {
+      console.error("Failed to restore session:", error);
+      this.clearAuth();
+      return false;
+    } finally {
+      this.isRefreshing = false;
+    }
+  }
+
+  /**
    * Clear all auth data (admin info + auth state)
    * HttpOnly cookies are cleared by backend via Set-Cookie with maxAge=0
    */

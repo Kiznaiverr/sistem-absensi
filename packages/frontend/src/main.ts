@@ -43,6 +43,11 @@ async function initializeApp() {
   // Check authentication status
   isAuthenticated = AuthService.isAuthenticated();
 
+  // If sessionStorage is empty, try to restore from valid refresh token cookie.
+  if (!isAuthenticated) {
+    isAuthenticated = await AuthService.restoreSession();
+  }
+
   // Setup global event listeners
   setupGlobalEventListeners();
 
