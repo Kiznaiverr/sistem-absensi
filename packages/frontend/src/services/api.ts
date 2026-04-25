@@ -245,6 +245,14 @@ export class ApiService {
     return response.data;
   }
 
+  /**
+   * POST /api/attendance/refresh-cache
+   * Refresh today's attendance cache from database
+   */
+  static async refreshAttendanceTodayCache(): Promise<void> {
+    await this.request<ApiResponse>("POST", "/attendance/refresh-cache");
+  }
+
   // ===== SANTRI MANAGEMENT ENDPOINTS =====
 
   /**

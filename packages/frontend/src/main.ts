@@ -21,6 +21,7 @@ let exportPageComponent: ExportPageComponent | null = null;
 let santriPage: SantriPage | null = null;
 let currentPage: "home" | "export" | "santri" = "home";
 let isAuthenticated = false;
+let statsUpdateInterval: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Setup global event listeners
@@ -105,6 +106,9 @@ async function handleLoginSuccess(data: any): Promise<void> {
 async function initializeMainApp(): Promise<void> {
   await FrontendCacheService.init();
 
+  // Keep backend attendance cache in sync when page is refreshed.
+  await ApiService.refreshAttendanceTodayCache();
+
   await ApiService.getClasses();
 
   // Preload santri cache from fresh source to avoid stale class-based backend cache.
@@ -112,14 +116,38 @@ async function initializeMainApp(): Promise<void> {
 
   // Render UI
   renderApp();
+}
 
-  // Initialize RFID form
+/**
+ * Create home-scoped components safely.
+ * Always destroy old instances before creating new ones.
+ */
+function mountHomeFeatures(): void {
+  destroyRfidFormComponent();
+
   rfidFormComponent = new RFIDFormComponent({
     containerId: "rfid-form-container",
     onSuccess: handleAttendanceSuccess,
     onError: handleAttendanceError,
   });
   rfidFormComponent.init();
+
+  startStatsUpdates();
+}
+
+/**
+ * Destroy home-scoped components/timers to prevent duplicate listeners.
+ */
+function unmountHomeFeatures(): void {
+  destroyRfidFormComponent();
+  stopStatsUpdates();
+}
+
+function destroyRfidFormComponent(): void {
+  if (rfidFormComponent) {
+    rfidFormComponent.destroy();
+    rfidFormComponent = null;
+  }
 }
 
 /**
@@ -128,6 +156,9 @@ async function initializeMainApp(): Promise<void> {
 function renderApp(): void {
   const app = document.getElementById("app");
   if (!app) return;
+
+  // Prevent duplicated global listeners/timers across re-renders.
+  unmountHomeFeatures();
 
   // Render unified header
   const headerHtml = renderHeader({
@@ -179,19 +210,11 @@ function renderApp(): void {
 
   // Setup based on current page
   if (currentPage === "home") {
-    // Setup periodic updates
-    setupPeriodicUpdates();
-
     // Initialize sidebar content
     initializeSidebar();
 
-    // Initialize RFID form
-    rfidFormComponent = new RFIDFormComponent({
-      containerId: "rfid-form-container",
-      onSuccess: handleAttendanceSuccess,
-      onError: handleAttendanceError,
-    });
-    rfidFormComponent.init();
+    // Initialize home-specific features
+    mountHomeFeatures();
   }
 }
 
@@ -199,6 +222,7 @@ function renderApp(): void {
  * Handle logout
  */
 function handleLogout(): void {
+  unmountHomeFeatures();
   AuthService.clearAuth();
   isAuthenticated = false;
   currentPage = "home";
@@ -211,6 +235,7 @@ function handleLogout(): void {
  * Handle authentication error and redirect to login
  */
 function handleAuthError(message: string): void {
+  unmountHomeFeatures();
   AuthService.clearAuth();
   isAuthenticated = false;
 
@@ -262,9 +287,21 @@ function renderHomePage(): string {
  * Setup periodic UI updates (every 5 seconds)
  */
 function setupPeriodicUpdates(): void {
-  setInterval(() => {
+  statsUpdateInterval = setInterval(() => {
     updateStats();
   }, 5000);
+}
+
+function startStatsUpdates(): void {
+  stopStatsUpdates();
+  setupPeriodicUpdates();
+}
+
+function stopStatsUpdates(): void {
+  if (statsUpdateInterval) {
+    clearInterval(statsUpdateInterval);
+    statsUpdateInterval = null;
+  }
 }
 
 /**
@@ -370,9 +407,7 @@ function handleAttendanceError(error: any): void {
  * Cleanup component on page unload
  */
 window.addEventListener("beforeunload", () => {
-  if (rfidFormComponent) {
-    rfidFormComponent.destroy();
-  }
+  unmountHomeFeatures();
   if (headerComponent) {
     headerComponent.destroy();
   }

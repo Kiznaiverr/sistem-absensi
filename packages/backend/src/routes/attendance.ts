@@ -126,6 +126,27 @@ router.post(
 );
 
 /**
+ * POST /api/attendance/refresh-cache
+ * Refresh today's attendance cache from database
+ */
+router.post(
+  "/refresh-cache",
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      await AttendanceService.refreshAttendanceTodayCache();
+
+      res.json({
+        success: true,
+        message: "Attendance cache refreshed",
+      });
+    } catch (error) {
+      logger.error("Error refreshing attendance cache", error);
+      next(error);
+    }
+  },
+);
+
+/**
  * GET /api/attendance/today
  * Get today's attendance summary
  */

@@ -69,6 +69,14 @@ export class AttendanceService {
   }
 
   /**
+   * Refresh today's attendance cache from database.
+   * Useful when data changes outside normal attendance flow.
+   */
+  static async refreshAttendanceTodayCache(): Promise<void> {
+    await this.initializeAttendanceTodayCache();
+  }
+
+  /**
    * Initialize today's attendance cache
    * Load existing attendance records from DB to sync with cache
    */
@@ -363,12 +371,13 @@ export class AttendanceService {
       error_count: response.errors.length,
     });
 
-    // Opsi 3: Invalidate cache after successful attendance records
+    // Invalidate cache after successful attendance records
     // Force fresh data from DB on next request to prevent stale data
-    if (response.success.length > 0) {
-      cacheService.delete(this.CACHE_KEY_ATTENDANCE_TODAY);
-      logger.info("Attendance cache invalidated after successful submission");
-    }
+
+    // if (response.success.length > 0) {
+    //   cacheService.delete(this.CACHE_KEY_ATTENDANCE_TODAY);
+    //   logger.info("Attendance cache invalidated after successful submission");
+    // }
 
     return response;
   }
