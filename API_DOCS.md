@@ -92,7 +92,7 @@ Semua error response mengikuti format berikut:
 
 ## Token Information (HttpOnly Cookies)
 
-### Security Implementation ✅
+### Security Implementation 
 
 - **Storage:** Access & Refresh tokens dalam **HttpOnly cookies** (tidak accessible via JavaScript)
 - **Flags:**
@@ -112,14 +112,14 @@ Semua error response mengikuti format berikut:
 ### Frontend Implementation
 
 ```typescript
-// ✅ Benar - Cookies otomatis included
+// Benar - Cookies otomatis included
 const response = await fetch("/api/endpoint", {
   method: "POST",
   credentials: "include", // PENTING: Agar cookies dikirim
   body: JSON.stringify(data),
 });
 
-// ❌ Salah - Cookies tidak included
+// Salah - Cookies tidak included
 const response = await fetch("/api/endpoint", {
   method: "POST",
   // Missing credentials: 'include'
@@ -816,9 +816,227 @@ curl -X POST http://localhost:5000/api/classes/init-cache \
 
 ---
 
+### Santri Import Background Job
+
+#### 12. Download Santri Import Template
+
+```
+GET /api/santri/template
+```
+
+**Deskripsi:** Download template Excel untuk import santri.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:** File Excel (`.xlsx`)
+
+**cURL:**
+
+```bash
+curl -X GET http://localhost:5000/api/santri/template \
+  -H "Authorization: Bearer <access_token>" \
+  --output template_santri.xlsx
+```
+
+---
+
+#### 13. Create Import Job
+
+```
+POST /api/santri/import-jobs
+```
+
+**Deskripsi:** Upload file Excel lalu buat background job import (non-blocking). Endpoint mengembalikan cepat dengan `job_id`.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+Content-Type: multipart/form-data
+```
+
+**Form Data:**
+
+- `file` (required): berkas `.xlsx` atau `.xls`, max 25MB
+
+**Response (HTTP 202):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "2c4f4d5e-9b6a-4ec4-a8ff-6e5c7679e2b5",
+    "status": "queued",
+    "progress_percent": 0,
+    "created_at": "2026-04-25T06:25:01.000Z",
+    "expires_at": null
+  }
+}
+```
+
+**Error Responses:**
+
+- 400: `NO_FILE_UPLOADED`
+- 400: `FILE_TOO_LARGE`
+- 400: `INVALID_FILE_FORMAT`
+
+**cURL:**
+
+```bash
+curl -X POST http://localhost:5000/api/santri/import-jobs \
+  -H "Authorization: Bearer <access_token>" \
+  -F "file=@template_santri_filled.xlsx"
+```
+
+---
+
+#### 14. Get Import Job Status
+
+```
+GET /api/santri/import-jobs/:jobId
+```
+
+**Deskripsi:** Ambil status, progress, dan ringkasan hasil import.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "job_id": "2c4f4d5e-9b6a-4ec4-a8ff-6e5c7679e2b5",
+    "status": "completed",
+    "stage": "completed",
+    "message": "Selesai. 1000 data berhasil diimpor",
+    "progress_percent": 100,
+    "total_rows": 1000,
+    "processed_rows": 1000,
+    "success_count": 1000,
+    "error_count": 0,
+    "created_at": "2026-04-25T06:25:01.000Z",
+    "started_at": "2026-04-25T06:25:03.000Z",
+    "finished_at": "2026-04-25T06:25:29.000Z",
+    "expires_at": "2026-04-25T06:30:29.000Z"
+  }
+}
+```
+
+**Error Responses:**
+
+- 404: `JOB_NOT_FOUND`
+- 403: `FORBIDDEN`
+
+---
+
+#### 15. Subscribe Import Progress (SSE)
+
+```
+GET /api/santri/import-jobs/:jobId/progress
+```
+
+**Deskripsi:** Stream progress import via Server-Sent Events (SSE). Connection akan ditutup otomatis saat `status` menjadi `completed` atau `failed`.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+Accept: text/event-stream
+```
+
+**Contoh event data:**
+
+```json
+{
+  "job_id": "2c4f4d5e-9b6a-4ec4-a8ff-6e5c7679e2b5",
+  "stage": "inserting",
+  "status": "processing",
+  "percentage": 88,
+  "current": 880,
+  "total": 1000,
+  "message": "Menyimpan ke database...",
+  "success_count": 850,
+  "error_count": 30
+}
+```
+
+---
+
+#### 16. Get Import Error Rows
+
+```
+GET /api/santri/import-jobs/:jobId/errors
+```
+
+**Deskripsi:** Ambil detail row-level error hasil import.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "row": 12,
+      "data": {
+        "name": "",
+        "rfid_id": "RFID001",
+        "class_name": "SMP-1"
+      },
+      "error_type": "EMPTY_NAME",
+      "message": "Nama santri kosong",
+      "severity": "error"
+    }
+  ]
+}
+```
+
+---
+
+#### 17. Export Import Errors (Excel)
+
+```
+GET /api/santri/import-jobs/:jobId/errors/export
+```
+
+**Deskripsi:** Download error rows hasil import sebagai Excel.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:** File Excel (`.xlsx`)
+
+**cURL:**
+
+```bash
+curl -X GET http://localhost:5000/api/santri/import-jobs/<job-id>/errors/export \
+  -H "Authorization: Bearer <access_token>" \
+  --output import-errors.xlsx
+```
+
+---
+
 ### Administrative
 
-#### 12. Health Check
+#### 18. Health Check
 
 ```
 GET /health
@@ -843,7 +1061,7 @@ curl -X GET http://localhost:5000/health
 
 ---
 
-#### 13. System Statistics
+#### 19. System Statistics
 
 ```
 GET /api/admin/stats
@@ -896,7 +1114,7 @@ curl -X GET http://localhost:5000/api/admin/stats \
 
 ---
 
-#### 14. Archive Status
+#### 20. Archive Status
 
 ```
 GET /api/admin/archive/status
@@ -935,7 +1153,7 @@ curl -X GET http://localhost:5000/api/admin/archive/status \
 
 ---
 
-#### 15. Archive History
+#### 21. Archive History
 
 ```
 GET /api/admin/archive/history
@@ -1134,4 +1352,4 @@ FRONTEND_URL=http://localhost:3000,http://localhost:5000
 
 **API Version:** 1.0.0
 **Status:** Stable
-**Last Updated:** April 16, 2026
+**Last Updated:** April 25, 2026
