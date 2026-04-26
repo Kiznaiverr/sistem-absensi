@@ -5,7 +5,9 @@
 [x] supabase max 1000 queries 
 [x] fix today attendance stat keep reset 
 [x] add check today attendance stat
+[x] notification for archive failed
 
-[] notification for archive failed
+[] move all cache configuration
 [] fully testing
 [] refactor
+[] archived data move to R2

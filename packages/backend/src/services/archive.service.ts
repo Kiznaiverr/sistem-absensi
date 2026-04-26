@@ -6,7 +6,7 @@
 
 import { supabaseClient } from "../config/database.js";
 import { createLogger } from "../utils/logger.js";
-import { subDays, formatISO, startOfDay, endOfDay } from "date-fns";
+import { subDays, formatISO } from "date-fns";
 
 const logger = createLogger("ArchiveService");
 
@@ -25,22 +25,28 @@ export class ArchiveService {
    * Main archive job - archives data older than 90 days
    * Called daily via cron job at 2 AM (Asia/Jakarta)
    */
-  static async archiveOldLogs(): Promise<ArchiveResult> {
+  static async archiveOldLogs(options?: {
+    thresholdDate?: string;
+    thresholdLabel?: string;
+  }): Promise<ArchiveResult> {
     const startTime = Date.now();
     const archiveDate = new Date();
-    const thresholdDate = subDays(archiveDate, this.ARCHIVE_THRESHOLD_DAYS);
-    const thresholdDateStr = formatISO(thresholdDate, {
-      representation: "date",
-    });
+    const thresholdDateStr =
+      options?.thresholdDate ||
+      formatISO(subDays(archiveDate, this.ARCHIVE_THRESHOLD_DAYS), {
+        representation: "date",
+      });
+    const thresholdLabel =
+      options?.thresholdLabel || `${this.ARCHIVE_THRESHOLD_DAYS} days`;
 
     try {
       logger.info("Archive job started", {
         threshold: thresholdDateStr,
-        threshold_days: this.ARCHIVE_THRESHOLD_DAYS,
+        threshold_label: thresholdLabel,
       });
 
       // Step 1: Verify data integrity
-      logger.info("Step 1: Verifying data integrity...");
+      logger.info("Verifying data integrity...");
       const integrityCheck = await this.verifyDataIntegrity(thresholdDateStr);
       if (!integrityCheck.isValid) {
         throw new Error(
@@ -50,7 +56,7 @@ export class ArchiveService {
       logger.info("Data integrity verified");
 
       // Step 2: Count records to archive
-      logger.info("Step 2: Counting archivable records...");
+      logger.info("Counting archivable records...");
       const recordsToArchive =
         await this.countRecordsToArchive(thresholdDateStr);
       logger.info(`Records to archive: ${recordsToArchive}`);
@@ -67,7 +73,7 @@ export class ArchiveService {
       }
 
       // Step 3: Copy to archive
-      logger.info("Step 3: Copying records to archive...");
+      logger.info("Copying records to archive...");
       const copiedCount = await this.copyToArchive(thresholdDateStr);
       logger.info(`Copied ${copiedCount} records to archive`);
 
@@ -76,7 +82,7 @@ export class ArchiveService {
       }
 
       // Step 4: Verify copy
-      logger.info("Step 4: Verifying archive copy...");
+      logger.info("Verifying archive copy...");
       const verifyResult = await this.verifyArchiveCopy(
         thresholdDateStr,
         recordsToArchive,
@@ -87,7 +93,7 @@ export class ArchiveService {
       logger.info("Archive copy verified");
 
       // Step 5: Delete from active
-      logger.info("Step 5: Deleting old records from active table...");
+      logger.info("Deleting old records from active table...");
       const deletedCount = await this.deleteFromActive(thresholdDateStr);
       logger.info(`Deleted ${deletedCount} records from active table`);
 

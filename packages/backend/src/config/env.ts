@@ -42,6 +42,14 @@ export const env = {
   SHIFT_SIANG_END: getEnv("SHIFT_SIANG_END", "16:00"),
   SHIFT_MALAM_START: getEnv("SHIFT_MALAM_START", "18:00"),
   SHIFT_MALAM_END: getEnv("SHIFT_MALAM_END", "21:00"),
+
+  // Email (SMTP)
+  SMTP_HOST: getEnv("SMTP_HOST", "smtp.gmail.com"),
+  SMTP_PORT: parseInt(getEnv("SMTP_PORT", "587")),
+  SMTP_USER: getEnv("SMTP_USER"),
+  SMTP_PASSWORD: getEnv("SMTP_PASSWORD"),
+  SMTP_FROM_EMAIL: getEnv("SMTP_FROM_EMAIL", "noreply@absensi-system.com"),
+  ALERT_EMAIL: getEnv("ALERT_EMAIL"),
 } as const;
 
 export default env;
