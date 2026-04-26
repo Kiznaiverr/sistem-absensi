@@ -11,6 +11,7 @@ import { AddSantriModal } from "./modals/AddSantriModal";
 import { EditSantriModal } from "./modals/EditSantriModal";
 import { DeleteSantriModal } from "./modals/DeleteSantriModal";
 import { ImportSantriModal } from "./modals/ImportSantriModal";
+import { CheckAttendanceModal } from "./modals/CheckAttendanceModal";
 
 export interface Santri {
   id: string;
@@ -54,6 +55,7 @@ export class SantriPage {
   private editModal: EditSantriModal | null = null;
   private deleteModal: DeleteSantriModal | null = null;
   private importModal: ImportSantriModal | null = null;
+  private checkAttendanceModal: CheckAttendanceModal | null = null;
 
   constructor(containerId: string) {
     this.containerId = containerId;
@@ -179,6 +181,11 @@ export class SantriPage {
               <h2 class="text-xl font-bold text-gray-900">Manajemen Santri</h2>
               <div class="flex gap-2">
                 <button 
+                  id="btn-check-attendance"
+                  class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium transition-colors">
+                  Check Absensi Hari Ini
+                </button>
+                <button 
                   id="btn-import-santri"
                   class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors">
                   Import dari Excel
@@ -202,6 +209,7 @@ export class SantriPage {
       <div id="edit-modal-container"></div>
       <div id="delete-modal-container"></div>
       <div id="import-modal-container"></div>
+      <div id="check-attendance-modal-container"></div>
 
       <!-- Error Toast -->
       <div id="error-toast" class="hidden fixed bottom-4 right-4 bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg"></div>
@@ -277,6 +285,19 @@ export class SantriPage {
       onImportSuccess: () => this.handleImportSuccess(),
       onCancel: () => this.closeImportModal(),
     });
+
+    this.checkAttendanceModal = new CheckAttendanceModal({
+      containerId: "check-attendance-modal-container",
+      onCheckSantri: (params: {
+        q?: string;
+        santri_id?: string;
+        rfid_id?: string;
+      }) => ApiService.checkTodaySantriStatus(params),
+      onLoadClassSummary: () => ApiService.getTodayClassSummary(),
+      onCheckClassStatus: (classId: string) =>
+        ApiService.getTodayClassStatus(classId),
+      onCancel: () => this.closeCheckAttendanceModal(),
+    });
   }
 
   /**
@@ -286,6 +307,12 @@ export class SantriPage {
     document.getElementById("btn-add-santri")?.addEventListener("click", () => {
       this.addModal?.show();
     });
+
+    document
+      .getElementById("btn-check-attendance")
+      ?.addEventListener("click", () => {
+        this.handleOpenCheckAttendanceModal();
+      });
 
     document
       .getElementById("btn-import-santri")
@@ -493,6 +520,14 @@ export class SantriPage {
    */
   private closeImportModal(): void {
     this.importModal?.hide();
+  }
+
+  private handleOpenCheckAttendanceModal(): void {
+    this.checkAttendanceModal?.show();
+  }
+
+  private closeCheckAttendanceModal(): void {
+    this.checkAttendanceModal?.hide();
   }
 
   /**

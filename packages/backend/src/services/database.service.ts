@@ -45,6 +45,59 @@ export interface SantriImportJobError {
   created_at: string;
 }
 
+export interface AttendanceStatusByShift {
+  checked_in: boolean;
+  checked_in_at: string | null;
+}
+
+export interface SantriAttendanceTodayStatus {
+  date: string;
+  source: "active" | "archive" | "both" | "none";
+  siang: AttendanceStatusByShift;
+  malam: AttendanceStatusByShift;
+}
+
+export interface ClassAttendanceTodaySummaryItem {
+  class_id: string;
+  class_name: string;
+  school_type: string;
+  total_santri_active: number;
+  siang_hadir_count: number;
+  malam_hadir_count: number;
+  siang_belum_count: number;
+  malam_belum_count: number;
+  siang_percentage: number;
+  malam_percentage: number;
+}
+
+export interface ClassAttendanceTodayStudentStatus {
+  santri_id: string;
+  name: string;
+  rfid_id: string;
+  siang_checked_in: boolean;
+  siang_checked_in_at: string | null;
+  malam_checked_in: boolean;
+  malam_checked_in_at: string | null;
+}
+
+export interface ClassAttendanceTodayStatus {
+  date: string;
+  source: "active" | "archive" | "both" | "none";
+  class: {
+    id: string;
+    name: string;
+    school_type: string;
+  };
+  summary: {
+    total_santri_active: number;
+    siang_hadir_count: number;
+    malam_hadir_count: number;
+    siang_belum_count: number;
+    malam_belum_count: number;
+  };
+  students: ClassAttendanceTodayStudentStatus[];
+}
+
 export class DatabaseService {
   /**
    * Get all classes
@@ -289,6 +342,362 @@ export class DatabaseService {
       };
     } catch (error) {
       logger.error("Failed to get attendance summary", { date, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Search santri candidates by name or exact RFID.
+   * Exact RFID matches are prioritized at the top of results.
+   */
+  static async searchSantriCandidates(
+    keyword: string,
+    limit: number = 20,
+  ): Promise<Santri[]> {
+    try {
+      const normalizedKeyword = keyword.trim();
+      if (!normalizedKeyword) return [];
+
+      const [exactRfidResult, nameResult] = await Promise.all([
+        supabaseClient
+          .from("santri")
+          .select("*, classes(*)")
+          .eq("rfid_id", normalizedKeyword)
+          .order("name", { ascending: true })
+          .limit(limit),
+        supabaseClient
+          .from("santri")
+          .select("*, classes(*)")
+          .ilike("name", `%${normalizedKeyword}%`)
+          .order("name", { ascending: true })
+          .limit(limit),
+      ]);
+
+      if (exactRfidResult.error) throw exactRfidResult.error;
+      if (nameResult.error) throw nameResult.error;
+
+      const deduped = new Map<string, Santri>();
+
+      for (const row of exactRfidResult.data || []) {
+        deduped.set(row.id, row as Santri);
+      }
+
+      for (const row of nameResult.data || []) {
+        if (!deduped.has(row.id)) {
+          deduped.set(row.id, row as Santri);
+        }
+      }
+
+      return Array.from(deduped.values()).slice(0, limit);
+    } catch (error) {
+      logger.error("Failed to search santri candidates", { keyword, error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get today's attendance status for one santri from active and archive tables.
+   */
+  static async getSantriAttendanceTodayStatus(
+    santriId: string,
+    date: string,
+  ): Promise<SantriAttendanceTodayStatus> {
+    try {
+      const [activeResult, archiveResult] = await Promise.all([
+        supabaseClient
+          .from("attendance_logs")
+          .select("shift, checked_in_at")
+          .eq("santri_id", santriId)
+          .eq("date", date),
+        supabaseClient
+          .from("attendance_logs_archive")
+          .select("shift, checked_in_at")
+          .eq("santri_id", santriId)
+          .eq("date", date),
+      ]);
+
+      if (activeResult.error) throw activeResult.error;
+      if (archiveResult.error) throw archiveResult.error;
+
+      const activeRows = activeResult.data || [];
+      const archiveRows = archiveResult.data || [];
+
+      const activeByShift = {
+        siang: activeRows.filter((row: any) => row.shift === "siang"),
+        malam: activeRows.filter((row: any) => row.shift === "malam"),
+      };
+
+      const archiveByShift = {
+        siang: archiveRows.filter((row: any) => row.shift === "siang"),
+        malam: archiveRows.filter((row: any) => row.shift === "malam"),
+      };
+
+      const pickLatestTime = (
+        rows: Array<{ checked_in_at: string | null }>,
+      ) => {
+        if (!rows.length) return null;
+        return (
+          rows
+            .map((row) => row.checked_in_at)
+            .filter((value): value is string => !!value)
+            .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ||
+          null
+        );
+      };
+
+      const siangActiveTime = pickLatestTime(activeByShift.siang as any);
+      const siangArchiveTime = pickLatestTime(archiveByShift.siang as any);
+      const malamActiveTime = pickLatestTime(activeByShift.malam as any);
+      const malamArchiveTime = pickLatestTime(archiveByShift.malam as any);
+
+      const activeHasData = activeRows.length > 0;
+      const archiveHasData = archiveRows.length > 0;
+
+      const source: "active" | "archive" | "both" | "none" = activeHasData
+        ? archiveHasData
+          ? "both"
+          : "active"
+        : archiveHasData
+          ? "archive"
+          : "none";
+
+      return {
+        date,
+        source,
+        siang: {
+          checked_in: !!(siangActiveTime || siangArchiveTime),
+          checked_in_at: siangActiveTime || siangArchiveTime,
+        },
+        malam: {
+          checked_in: !!(malamActiveTime || malamArchiveTime),
+          checked_in_at: malamActiveTime || malamArchiveTime,
+        },
+      };
+    } catch (error) {
+      logger.error("Failed to get santri attendance today status", {
+        santriId,
+        date,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get today's attendance summary grouped by class.
+   */
+  static async getTodayClassAttendanceSummary(
+    date: string,
+  ): Promise<ClassAttendanceTodaySummaryItem[]> {
+    try {
+      const [classesResult, santriResult, activeResult, archiveResult] =
+        await Promise.all([
+          supabaseClient.from("classes").select("id, name, school_type"),
+          supabaseClient
+            .from("santri")
+            .select("id, class_id")
+            .eq("is_active", true),
+          supabaseClient
+            .from("attendance_logs")
+            .select("class_id, santri_id, shift")
+            .eq("date", date),
+          supabaseClient
+            .from("attendance_logs_archive")
+            .select("class_id, santri_id, shift")
+            .eq("date", date),
+        ]);
+
+      if (classesResult.error) throw classesResult.error;
+      if (santriResult.error) throw santriResult.error;
+      if (activeResult.error) throw activeResult.error;
+      if (archiveResult.error) throw archiveResult.error;
+
+      const classes = classesResult.data || [];
+      const activeSantri = santriResult.data || [];
+      const logs = [
+        ...(activeResult.data || []),
+        ...(archiveResult.data || []),
+      ];
+
+      const totalByClass = new Map<string, number>();
+      for (const row of activeSantri) {
+        totalByClass.set(
+          row.class_id,
+          (totalByClass.get(row.class_id) || 0) + 1,
+        );
+      }
+
+      const siangByClass = new Map<string, Set<string>>();
+      const malamByClass = new Map<string, Set<string>>();
+
+      for (const log of logs) {
+        const target = log.shift === "siang" ? siangByClass : malamByClass;
+        if (!target.has(log.class_id)) {
+          target.set(log.class_id, new Set<string>());
+        }
+        target.get(log.class_id)!.add(log.santri_id);
+      }
+
+      return classes
+        .map((classItem) => {
+          const total = totalByClass.get(classItem.id) || 0;
+          const siangHadir = siangByClass.get(classItem.id)?.size || 0;
+          const malamHadir = malamByClass.get(classItem.id)?.size || 0;
+          const siangBelum = Math.max(0, total - siangHadir);
+          const malamBelum = Math.max(0, total - malamHadir);
+
+          return {
+            class_id: classItem.id,
+            class_name: classItem.name,
+            school_type: classItem.school_type,
+            total_santri_active: total,
+            siang_hadir_count: siangHadir,
+            malam_hadir_count: malamHadir,
+            siang_belum_count: siangBelum,
+            malam_belum_count: malamBelum,
+            siang_percentage:
+              total > 0 ? Number(((siangHadir / total) * 100).toFixed(1)) : 0,
+            malam_percentage:
+              total > 0 ? Number(((malamHadir / total) * 100).toFixed(1)) : 0,
+          };
+        })
+        .sort((a, b) => {
+          if (a.school_type === b.school_type) {
+            return a.class_name.localeCompare(b.class_name);
+          }
+          return a.school_type.localeCompare(b.school_type);
+        });
+    } catch (error) {
+      logger.error("Failed to get today class attendance summary", {
+        date,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get today's attendance detail for one class.
+   */
+  static async getTodayClassAttendanceStatus(
+    classId: string,
+    date: string,
+  ): Promise<ClassAttendanceTodayStatus | null> {
+    try {
+      const [classResult, studentsResult, activeResult, archiveResult] =
+        await Promise.all([
+          supabaseClient
+            .from("classes")
+            .select("id, name, school_type")
+            .eq("id", classId)
+            .single(),
+          supabaseClient
+            .from("santri")
+            .select("id, name, rfid_id")
+            .eq("class_id", classId)
+            .eq("is_active", true)
+            .order("name", { ascending: true }),
+          supabaseClient
+            .from("attendance_logs")
+            .select("santri_id, shift, checked_in_at")
+            .eq("class_id", classId)
+            .eq("date", date),
+          supabaseClient
+            .from("attendance_logs_archive")
+            .select("santri_id, shift, checked_in_at")
+            .eq("class_id", classId)
+            .eq("date", date),
+        ]);
+
+      if (classResult.error && classResult.error.code !== "PGRST116") {
+        throw classResult.error;
+      }
+      if (studentsResult.error) throw studentsResult.error;
+      if (activeResult.error) throw activeResult.error;
+      if (archiveResult.error) throw archiveResult.error;
+
+      if (!classResult.data) return null;
+
+      const students = studentsResult.data || [];
+      const activeLogs = activeResult.data || [];
+      const archiveLogs = archiveResult.data || [];
+
+      const activeHasData = activeLogs.length > 0;
+      const archiveHasData = archiveLogs.length > 0;
+      const source: "active" | "archive" | "both" | "none" = activeHasData
+        ? archiveHasData
+          ? "both"
+          : "active"
+        : archiveHasData
+          ? "archive"
+          : "none";
+
+      const pickLatestByShift = (
+        santriId: string,
+        shift: "siang" | "malam",
+      ): string | null => {
+        const candidates = [...activeLogs, ...archiveLogs]
+          .filter(
+            (log: any) => log.santri_id === santriId && log.shift === shift,
+          )
+          .map((log: any) => log.checked_in_at)
+          .filter((value: any): value is string => !!value)
+          .sort(
+            (a: string, b: string) =>
+              new Date(b).getTime() - new Date(a).getTime(),
+          );
+
+        return candidates[0] || null;
+      };
+
+      const studentStatuses: ClassAttendanceTodayStudentStatus[] = students.map(
+        (student: any) => {
+          const siangTime = pickLatestByShift(student.id, "siang");
+          const malamTime = pickLatestByShift(student.id, "malam");
+
+          return {
+            santri_id: student.id,
+            name: student.name,
+            rfid_id: student.rfid_id,
+            siang_checked_in: !!siangTime,
+            siang_checked_in_at: siangTime,
+            malam_checked_in: !!malamTime,
+            malam_checked_in_at: malamTime,
+          };
+        },
+      );
+
+      const total = studentStatuses.length;
+      const siangHadir = studentStatuses.filter(
+        (s) => s.siang_checked_in,
+      ).length;
+      const malamHadir = studentStatuses.filter(
+        (s) => s.malam_checked_in,
+      ).length;
+
+      return {
+        date,
+        source,
+        class: {
+          id: classResult.data.id,
+          name: classResult.data.name,
+          school_type: classResult.data.school_type,
+        },
+        summary: {
+          total_santri_active: total,
+          siang_hadir_count: siangHadir,
+          malam_hadir_count: malamHadir,
+          siang_belum_count: Math.max(0, total - siangHadir),
+          malam_belum_count: Math.max(0, total - malamHadir),
+        },
+        students: studentStatuses,
+      };
+    } catch (error) {
+      logger.error("Failed to get today class attendance status", {
+        classId,
+        date,
+        error,
+      });
       throw error;
     }
   }

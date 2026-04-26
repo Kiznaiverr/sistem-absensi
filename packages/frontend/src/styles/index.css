@@ -255,6 +255,36 @@ body {
 }
 
 /* ============================================
+   SCROLLBARS
+   ============================================ */
+
+.scrollbar-soft {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(251, 146, 60, 0.45) transparent;
+}
+
+.scrollbar-soft::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-soft::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-soft::-webkit-scrollbar-thumb {
+  background: rgba(251, 146, 60, 0.35);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.scrollbar-soft::-webkit-scrollbar-thumb:hover {
+  background: rgba(251, 146, 60, 0.55);
+  background-clip: padding-box;
+}
+
+/* ============================================
    LISTS & ITEMS
    ============================================ */
 

@@ -168,6 +168,183 @@ router.get(
 );
 
 /**
+ * GET /api/attendance/today/status
+ * Check today's attendance status for individual santri.
+ * Query params: santri_id OR rfid_id OR q (name/RFID text)
+ */
+router.get(
+  "/today/status",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const santriId = (req.query.santri_id as string | undefined)?.trim();
+      const rfidId = (req.query.rfid_id as string | undefined)?.trim();
+      const queryText = (req.query.q as string | undefined)?.trim();
+
+      if (!santriId && !rfidId && !queryText) {
+        return res.status(400).json({
+          success: false,
+          error: "One of santri_id, rfid_id, or q is required",
+          error_code: "MISSING_IDENTIFIER",
+        });
+      }
+
+      let santri: any | null = null;
+
+      if (santriId) {
+        santri = await DatabaseService.getSantriById(santriId);
+      } else if (rfidId) {
+        santri = await DatabaseService.getSantriByRFID(rfidId);
+      } else if (queryText) {
+        // Prioritize exact RFID match when q is provided from tap-card flow.
+        const exactByRfid = await DatabaseService.getSantriByRFID(queryText);
+        if (exactByRfid) {
+          santri = exactByRfid;
+        } else {
+          const candidates = await DatabaseService.searchSantriCandidates(
+            queryText,
+            20,
+          );
+
+          if (candidates.length === 0) {
+            return res.status(404).json({
+              success: false,
+              error: "Santri tidak ditemukan",
+              error_code: "SANTRI_NOT_FOUND",
+            });
+          }
+
+          if (candidates.length > 1) {
+            return res.json({
+              success: true,
+              data: {
+                mode: "candidates",
+                query: queryText,
+                candidates: candidates.map((item: any) => ({
+                  id: item.id,
+                  name: item.name,
+                  rfid_id: item.rfid_id,
+                  class_id: item.class_id,
+                  class_name: item.classes?.name || null,
+                  school_type: item.classes?.school_type || null,
+                  is_active: item.is_active,
+                })),
+              },
+            });
+          }
+
+          santri = candidates[0];
+        }
+      }
+
+      if (!santri) {
+        return res.status(404).json({
+          success: false,
+          error: "Santri tidak ditemukan",
+          error_code: "SANTRI_NOT_FOUND",
+        });
+      }
+
+      const today = new Date().toISOString().split("T")[0];
+      const status = await DatabaseService.getSantriAttendanceTodayStatus(
+        santri.id,
+        today,
+      );
+
+      res.json({
+        success: true,
+        data: {
+          mode: "single",
+          date: today,
+          santri: {
+            id: santri.id,
+            name: santri.name,
+            rfid_id: santri.rfid_id,
+            class_id: santri.class_id,
+            class_name: santri.classes?.name || null,
+            school_type: santri.classes?.school_type || null,
+            is_active: santri.is_active,
+          },
+          status,
+        },
+      });
+    } catch (error) {
+      logger.error("Error checking individual today status", error);
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /api/attendance/today/class-summary
+ * Get today's attendance summary grouped by class.
+ */
+router.get(
+  "/today/class-summary",
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const summary =
+        await DatabaseService.getTodayClassAttendanceSummary(today);
+
+      res.json({
+        success: true,
+        data: {
+          date: today,
+          classes: summary,
+        },
+      });
+    } catch (error) {
+      logger.error("Error getting today class summary", error);
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /api/attendance/today/class-status
+ * Get today's attendance status detail for one class.
+ * Query params: class_id
+ */
+router.get(
+  "/today/class-status",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const classId = (req.query.class_id as string | undefined)?.trim();
+
+      if (!classId) {
+        return res.status(400).json({
+          success: false,
+          error: "class_id is required",
+          error_code: "MISSING_CLASS_ID",
+        });
+      }
+
+      const today = new Date().toISOString().split("T")[0];
+      const status = await DatabaseService.getTodayClassAttendanceStatus(
+        classId,
+        today,
+      );
+
+      if (!status) {
+        return res.status(404).json({
+          success: false,
+          error: "Class not found",
+          error_code: "CLASS_NOT_FOUND",
+        });
+      }
+
+      res.json({
+        success: true,
+        data: status,
+      });
+    } catch (error) {
+      logger.error("Error getting today class status", error);
+      next(error);
+    }
+  },
+);
+
+/**
  * GET /api/attendance/month
  * Get monthly attendance data with optional filters
  * Query params: month (0-11), year, school_type, class_id, shift

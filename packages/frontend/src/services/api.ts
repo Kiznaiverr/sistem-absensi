@@ -19,6 +19,82 @@ interface ApiResponse<T = any> {
   error_code?: string;
 }
 
+export interface AttendanceStatusCandidate {
+  id: string;
+  name: string;
+  rfid_id: string;
+  class_id: string;
+  class_name: string | null;
+  school_type: string | null;
+  is_active: boolean;
+}
+
+export interface AttendanceTodayStatusSingle {
+  mode: "single";
+  date: string;
+  santri: AttendanceStatusCandidate;
+  status: {
+    date: string;
+    source: "active" | "archive" | "both" | "none";
+    siang: { checked_in: boolean; checked_in_at: string | null };
+    malam: { checked_in: boolean; checked_in_at: string | null };
+  };
+}
+
+export interface AttendanceTodayStatusCandidates {
+  mode: "candidates";
+  query: string;
+  candidates: AttendanceStatusCandidate[];
+}
+
+export type AttendanceTodayStatusResponse =
+  | AttendanceTodayStatusSingle
+  | AttendanceTodayStatusCandidates;
+
+export interface AttendanceTodayClassSummaryItem {
+  class_id: string;
+  class_name: string;
+  school_type: string;
+  total_santri_active: number;
+  siang_hadir_count: number;
+  malam_hadir_count: number;
+  siang_belum_count: number;
+  malam_belum_count: number;
+  siang_percentage: number;
+  malam_percentage: number;
+}
+
+export interface AttendanceTodayClassSummaryResponse {
+  date: string;
+  classes: AttendanceTodayClassSummaryItem[];
+}
+
+export interface AttendanceTodayClassStatusResponse {
+  date: string;
+  source: "active" | "archive" | "both" | "none";
+  class: {
+    id: string;
+    name: string;
+    school_type: string;
+  };
+  summary: {
+    total_santri_active: number;
+    siang_hadir_count: number;
+    malam_hadir_count: number;
+    siang_belum_count: number;
+    malam_belum_count: number;
+  };
+  students: Array<{
+    santri_id: string;
+    name: string;
+    rfid_id: string;
+    siang_checked_in: boolean;
+    siang_checked_in_at: string | null;
+    malam_checked_in: boolean;
+    malam_checked_in_at: string | null;
+  }>;
+}
+
 export class ApiService {
   /**
    * Make HTTP request with authentication
@@ -95,6 +171,53 @@ export class ApiService {
     const response = await this.request<ApiResponse>(
       "GET",
       "/attendance/today",
+    );
+    return response.data!;
+  }
+
+  /**
+   * GET /api/attendance/today/status
+   * Check individual santri attendance status for today.
+   */
+  static async checkTodaySantriStatus(params: {
+    santri_id?: string;
+    rfid_id?: string;
+    q?: string;
+  }): Promise<AttendanceTodayStatusResponse> {
+    const query = new URLSearchParams();
+    if (params.santri_id) query.append("santri_id", params.santri_id);
+    if (params.rfid_id) query.append("rfid_id", params.rfid_id);
+    if (params.q) query.append("q", params.q);
+
+    const response = await this.request<
+      ApiResponse<AttendanceTodayStatusResponse>
+    >("GET", `/attendance/today/status?${query.toString()}`);
+    return response.data!;
+  }
+
+  /**
+   * GET /api/attendance/today/class-summary
+   * Get today's attendance summary for all classes.
+   */
+  static async getTodayClassSummary(): Promise<AttendanceTodayClassSummaryResponse> {
+    const response = await this.request<
+      ApiResponse<AttendanceTodayClassSummaryResponse>
+    >("GET", "/attendance/today/class-summary");
+    return response.data!;
+  }
+
+  /**
+   * GET /api/attendance/today/class-status
+   * Get today's attendance detail for a specific class.
+   */
+  static async getTodayClassStatus(
+    classId: string,
+  ): Promise<AttendanceTodayClassStatusResponse> {
+    const response = await this.request<
+      ApiResponse<AttendanceTodayClassStatusResponse>
+    >(
+      "GET",
+      `/attendance/today/class-status?class_id=${encodeURIComponent(classId)}`,
     );
     return response.data!;
   }

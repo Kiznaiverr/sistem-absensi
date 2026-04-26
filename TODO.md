@@ -4,7 +4,8 @@
 [x] fix loading in import excel 
 [x] supabase max 1000 queries 
 [x] fix today attendance stat keep reset 
+[x] add check today attendance stat
 
-notification for archive failed
-fully testing
-refactor
+[] notification for archive failed
+[] fully testing
+[] refactor
