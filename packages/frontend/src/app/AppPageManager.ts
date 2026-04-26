@@ -121,6 +121,7 @@ export class AppPageManager {
     });
     this.rfidFormComponent.init();
 
+    void this.updateStats();
     this.startStatsUpdates();
   }
 
@@ -174,7 +175,7 @@ export class AppPageManager {
 
   private setupPeriodicUIUpdates(): void {
     this.statsUpdateInterval = setInterval(() => {
-      this.updateStats();
+      void this.updateStats();
     }, 5000);
   }
 
@@ -190,8 +191,19 @@ export class AppPageManager {
     }
   }
 
-  private updateStats(): void {
-    const summary = FrontendCacheService.getTodaySummary();
+  private async updateStats(): Promise<void> {
+    let summary = FrontendCacheService.getTodaySummary();
+
+    try {
+      summary = await ApiService.getTodaySummary();
+    } catch (error) {
+      // Fallback to local cache if the endpoint is temporarily unavailable.
+      console.warn(
+        "Failed to fetch today summary from API, using cache",
+        error,
+      );
+    }
+
     const siangEl = document.getElementById("stat-siang");
     const malamEl = document.getElementById("stat-malam");
     const totalEl = document.getElementById("stat-total");
@@ -253,7 +265,7 @@ export class AppPageManager {
   }
 
   private handleAttendanceSuccess(_record?: any): void {
-    this.updateStats();
+    void this.updateStats();
     this.initializeSidebar();
   }
 

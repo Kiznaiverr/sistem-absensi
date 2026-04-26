@@ -52,7 +52,6 @@ export class FrontendCacheService {
   private static readonly STORE_NAME = "cache";
   private static readonly TTL_SANTRI_SECONDS = 300; // 5 minutes, matches backend TTL
   private static readonly TTL_CLASSES_SECONDS = 3600; // 1 hour, matches backend TTL
-  private static readonly TTL_ATTENDANCE_SECONDS = 300; // 5 minutes, matches backend TTL
   private static readonly TTL_AVAILABLE_MONTHS_SECONDS = 1800; // 30 minutes - available-months doesn't change frequently
   private static db: IDBDatabase | null = null;
 
@@ -78,16 +77,11 @@ export class FrontendCacheService {
   };
 
   /**
-   * Check if attendance cache is expired (older than TTL)
+   * Attendance cache is daily data. Clear only when calendar day changes.
    */
-  private static isAttendanceCacheExpired(): boolean {
-    const lastSync = this.store.last_sync.attendance;
-    if (lastSync === 0) return true; // Never synced
-
-    const ageMs = Date.now() - lastSync;
-    const ageSeconds = Math.floor(ageMs / 1000);
-
-    return ageSeconds > this.TTL_ATTENDANCE_SECONDS;
+  private static isAttendanceCacheStaleByDate(): boolean {
+    const today = new Date().toISOString().split("T")[0];
+    return this.store.attendance_today.date !== today;
   }
 
   /**
@@ -133,13 +127,14 @@ export class FrontendCacheService {
    * Clear attendance cache when expired
    */
   private static clearExpiredAttendanceCache(): void {
-    if (this.isAttendanceCacheExpired()) {
+    if (this.isAttendanceCacheStaleByDate()) {
       this.store.attendance_today = {
         date: new Date().toISOString().split("T")[0],
         siang: new Set(),
         malam: new Set(),
         records: [],
       };
+      this.store.last_sync.attendance = 0;
       this.saveToIndexedDB();
     }
   }
@@ -196,6 +191,14 @@ export class FrontendCacheService {
           if (item.key === "available_months") {
             this.store.available_months = item.value;
           }
+          if (item.key === "last_sync") {
+            this.store.last_sync = {
+              santri: item.value?.santri || 0,
+              classes: item.value?.classes || 0,
+              attendance: item.value?.attendance || 0,
+              available_months: item.value?.available_months || 0,
+            };
+          }
         }
         resolve();
       };
@@ -238,6 +241,12 @@ export class FrontendCacheService {
       store.put({
         key: "available_months",
         value: this.store.available_months,
+      });
+
+      // Save sync timestamps
+      store.put({
+        key: "last_sync",
+        value: this.store.last_sync,
       });
 
       transaction.oncomplete = () => resolve();

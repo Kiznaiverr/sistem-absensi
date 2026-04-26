@@ -310,6 +310,8 @@ export class DatabaseService {
     source: "active" | "archive" | "both";
   }> {
     try {
+      const pageSize = 500;
+
       // Get classes
       let classQuery = supabaseClient.from("classes").select("*");
 
@@ -340,17 +342,30 @@ export class DatabaseService {
 
       if (classesData && classesData.length > 0) {
         const classIds = (classesData as any[]).map((c) => c.id);
-        let santriQuery = supabaseClient
-          .from("santri")
-          .select("*")
-          .eq("is_active", true)
-          .in("class_id", classIds);
+        let santriOffset = 0;
 
-        const { data, error: santriError } = await santriQuery.order("name", {
-          ascending: true,
-        });
-        if (santriError) throw santriError;
-        santriData = data || [];
+        while (true) {
+          let santriQuery = supabaseClient
+            .from("santri")
+            .select("*")
+            .eq("is_active", true)
+            .in("class_id", classIds)
+            .order("name", { ascending: true })
+            .order("id", { ascending: true })
+            .range(santriOffset, santriOffset + pageSize - 1);
+
+          const { data, error: santriError } = await santriQuery;
+          if (santriError) throw santriError;
+
+          const pageData = data || [];
+          santriData.push(...pageData);
+
+          if (pageData.length < pageSize) {
+            break;
+          }
+
+          santriOffset += pageSize;
+        }
       }
 
       // Get attendance logs for the month
@@ -363,66 +378,93 @@ export class DatabaseService {
         const classIds = (classesData as any[]).map((c) => c.id);
 
         // Query from ACTIVE table
-        let activeQuery = supabaseClient
-          .from("attendance_logs")
-          .select("*, santri(*), classes(*)")
-          .gte("date", startDate)
-          .lte("date", endDate)
-          .eq("shift", shift);
+        const activeData: any[] = [];
+        let activeOffset = 0;
 
-        if (classIds.length === 1) {
-          activeQuery = activeQuery.eq("class_id", classIds[0]);
-        } else {
-          activeQuery = activeQuery.in("class_id", classIds);
+        while (true) {
+          let activeQuery = supabaseClient
+            .from("attendance_logs")
+            .select("*, santri(*), classes(*)")
+            .gte("date", startDate)
+            .lte("date", endDate)
+            .eq("shift", shift)
+            .in("class_id", classIds)
+            .order("date", { ascending: true })
+            .order("id", { ascending: true })
+            .range(activeOffset, activeOffset + pageSize - 1);
+
+          const { data, error: activeError } = await activeQuery;
+          if (activeError) throw activeError;
+
+          const pageData = data || [];
+          activeData.push(...pageData);
+
+          if (pageData.length < pageSize) {
+            break;
+          }
+
+          activeOffset += pageSize;
         }
 
-        const { data: activeData, error: activeError } = await activeQuery;
-        if (activeError) throw activeError;
-
         // Query from ARCHIVE table
-        let archiveQuery = supabaseClient
-          .from("attendance_logs_archive")
-          .select("*")
-          .gte("date", startDate)
-          .lte("date", endDate)
-          .eq("shift", shift)
-          .in("class_id", classIds);
+        const archiveData: any[] = [];
+        let archiveOffset = 0;
 
-        const { data: archiveData, error: archiveError } = await archiveQuery;
-        if (archiveError) throw archiveError;
+        while (true) {
+          const archiveQuery = supabaseClient
+            .from("attendance_logs_archive")
+            .select("*")
+            .gte("date", startDate)
+            .lte("date", endDate)
+            .eq("shift", shift)
+            .in("class_id", classIds)
+            .order("date", { ascending: true })
+            .order("id", { ascending: true })
+            .range(archiveOffset, archiveOffset + pageSize - 1);
+
+          const { data, error: archiveError } = await archiveQuery;
+          if (archiveError) throw archiveError;
+
+          const pageData = data || [];
+          archiveData.push(...pageData);
+
+          if (pageData.length < pageSize) {
+            break;
+          }
+
+          archiveOffset += pageSize;
+        }
 
         // Normalize archive data to match active format
-        const normalizedArchiveData = (archiveData || []).map(
-          (record: any) => ({
-            id: record.id,
-            santri_id: record.santri_id,
+        const normalizedArchiveData = archiveData.map((record: any) => ({
+          id: record.id,
+          santri_id: record.santri_id,
+          class_id: record.class_id,
+          date: record.date,
+          shift: record.shift,
+          checked_in_at: record.checked_in_at,
+          status: record.status,
+          notes: record.notes,
+          created_at: record.original_created_at,
+          santri: {
+            id: record.santri_id,
+            name: record.santri_name,
+            rfid_id: record.santri_rfid_id,
             class_id: record.class_id,
-            date: record.date,
-            shift: record.shift,
-            checked_in_at: record.checked_in_at,
-            status: record.status,
-            notes: record.notes,
-            created_at: record.original_created_at,
-            santri: {
-              id: record.santri_id,
-              name: record.santri_name,
-              rfid_id: record.santri_rfid_id,
-              class_id: record.class_id,
-            },
-            classes: {
-              id: record.class_id,
-              name: record.class_name,
-              school_type: record.school_type,
-              grade: record.grade,
-            },
-          }),
-        );
+          },
+          classes: {
+            id: record.class_id,
+            name: record.class_name,
+            school_type: record.school_type,
+            grade: record.grade,
+          },
+        }));
 
         // Combine both datasets, deduplicating by id
         const dataMap = new Map();
 
         // Add active data first
-        (activeData || []).forEach((record: any) => {
+        activeData.forEach((record: any) => {
           dataMap.set(record.id, record);
         });
 
@@ -436,24 +478,11 @@ export class DatabaseService {
         attendanceData = Array.from(dataMap.values());
 
         // Determine data source
-        if (
-          activeData &&
-          activeData.length > 0 &&
-          (!archiveData || archiveData.length === 0)
-        ) {
+        if (activeData.length > 0 && archiveData.length === 0) {
           dataSource = "active";
-        } else if (
-          (!activeData || activeData.length === 0) &&
-          archiveData &&
-          archiveData.length > 0
-        ) {
+        } else if (activeData.length === 0 && archiveData.length > 0) {
           dataSource = "archive";
-        } else if (
-          activeData &&
-          activeData.length > 0 &&
-          archiveData &&
-          archiveData.length > 0
-        ) {
+        } else if (activeData.length > 0 && archiveData.length > 0) {
           dataSource = "both";
         }
       }

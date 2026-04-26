@@ -1,4 +1,0 @@
-fix already absen handling error (fixed maybe)
-notification for archive failed
-fully testing
-refactor
