@@ -183,6 +183,56 @@ docker-compose exec absensi-app curl -I http://localhost:5000/health
 
 ---
 
+## Optional: Cloudflare Tunnel (VPS with NAT)
+
+For VPS behind NAT or restricted firewall, use Cloudflare Tunnel to expose application securely without direct port exposure.
+
+### Ports vs Expose
+
+- **`ports:`** - Exposes port on host machine (need for local access)
+  - Use for: Local development, direct testing
+- **`expose:`** - Only visible to container network (not host)
+  - Use for: VPS with reverse proxy/tunnel (safer)
+
+### Setup
+
+1. **Create tunnel at [Cloudflare Dashboard](https://dash.cloudflare.com/)**
+   - Go to "Zero Trust" → "Access" → "Tunnels"
+   - Create tunnel named `absensi-tunnel`
+   - Copy the `TUNNEL_TOKEN`
+
+2. **Add to `.env`:**
+
+   ```env
+   CLOUDFLARE_TOKEN=your_tunnel_token_here
+   ```
+
+3. **Update docker-compose.yml:**
+   - Comment out `ports:` section
+   - Uncomment `expose:` section in `absensi-app`
+
+   ```yaml
+   # ports:
+   #   - "5000:5000"
+   expose:
+     - "5000"
+   ```
+
+4. **Start with tunnel:**
+
+   ```bash
+   docker-compose --profile vpn up -d
+   ```
+
+5. **Verify:**
+   ```bash
+   docker-compose logs -f cloudflared
+   ```
+
+Your app is now accessible through Cloudflare URL instead of direct IP:port
+
+---
+
 ## Development with Docker
 
 ### Option 1: Hot Reload (Recommended for Development)

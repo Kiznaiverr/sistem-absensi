@@ -4,8 +4,15 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: absensi-app
+
+    # Default: local development (ports exposed to host)
     ports:
       - "5000:5000"
+
+    # For VPS with NAT: replace 'ports:' above with 'expose:' below
+    # expose:
+    #   - "5000"
+
     env_file:
       - packages/backend/.env
     restart: unless-stopped
@@ -25,3 +32,21 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  # Optional: Cloudflare Tunnel for VPS NAT environments
+  # Setup:
+  #   1. Create tunnel at https://dash.cloudflare.com/ → Zero Trust → Tunnels
+  #   2. Add CLOUDFLARE_TOKEN to .env
+  #   3. Replace 'ports:' with 'expose:' in absensi-app above
+  #   4. Run: docker-compose --profile vpn up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: absensi-cloudflared
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TOKEN}
+    restart: unless-stopped
+    profiles:
+      - vpn
+    depends_on:
+      - absensi-app
