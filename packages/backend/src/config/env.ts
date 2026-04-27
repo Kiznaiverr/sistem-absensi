@@ -60,6 +60,13 @@ export const env = {
   SMTP_FROM_EMAIL: getEnv("SMTP_FROM_EMAIL", "noreply@absensi-system.com"),
   ALERT_EMAIL: getEnv("ALERT_EMAIL"),
 
+  // Cloudflare R2 Storage
+  R2_ACCOUNT_ID: getEnv("R2_ACCOUNT_ID"),
+  R2_ACCESS_KEY_ID: getEnv("R2_ACCESS_KEY_ID"),
+  R2_SECRET_ACCESS_KEY: getEnv("R2_SECRET_ACCESS_KEY"),
+  R2_BUCKET_NAME: getEnv("R2_BUCKET_NAME", "absensi-app"),
+  R2_REGION: getEnv("R2_REGION", "auto"),
+
   // Cloudflare Tunnel (Optional - VPS with NAT only)
   TUNNEL_ID: getEnv("TUNNEL_ID", ""),
   TUNNEL_TOKEN: getEnv("TUNNEL_TOKEN", ""),

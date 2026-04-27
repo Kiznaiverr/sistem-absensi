@@ -268,7 +268,8 @@ export class DatabaseService {
   }
 
   /**
-   * Get attendance with filters
+   * Get attendance with filters (includes archived data)
+   * Queries both attendance_logs and attendance_logs_archive tables
    */
   static async getAttendanceWithFilters(filters: {
     month?: number;
@@ -280,30 +281,88 @@ export class DatabaseService {
     date_to?: string;
   }): Promise<AttendanceLog[]> {
     try {
-      let query = supabaseClient
+      // Query active logs with joins
+      let logsQuery = supabaseClient
         .from("attendance_logs")
         .select("*, santri(*), classes(*)");
 
       if (filters.date_from) {
-        query = query.gte("date", filters.date_from);
+        logsQuery = logsQuery.gte("date", filters.date_from);
       }
       if (filters.date_to) {
-        query = query.lte("date", filters.date_to);
+        logsQuery = logsQuery.lte("date", filters.date_to);
       }
       if (filters.class_id) {
-        query = query.eq("class_id", filters.class_id);
+        logsQuery = logsQuery.eq("class_id", filters.class_id);
       }
       if (filters.shift) {
-        query = query.eq("shift", filters.shift);
+        logsQuery = logsQuery.eq("shift", filters.shift);
       }
       if (filters.school_type) {
-        query = query.eq("classes.school_type", filters.school_type);
+        logsQuery = logsQuery.eq("classes.school_type", filters.school_type);
       }
 
-      const { data, error } = await query.order("date", { ascending: false });
+      const { data: logsData, error: logsError } = await logsQuery.order(
+        "date",
+        { ascending: false },
+      );
 
-      if (error) throw error;
-      return data || [];
+      if (logsError) throw logsError;
+
+      // Query archived logs WITHOUT joins (archive table doesn't have FK relationships)
+      // But it has denormalized columns, so we can get what we need
+      let archiveQuery = supabaseClient
+        .from("attendance_logs_archive")
+        .select(
+          "id, class_id, santri_id, date, checked_in_at, status, shift, notes",
+        );
+
+      if (filters.date_from) {
+        archiveQuery = archiveQuery.gte("date", filters.date_from);
+      }
+      if (filters.date_to) {
+        archiveQuery = archiveQuery.lte("date", filters.date_to);
+      }
+      if (filters.class_id) {
+        archiveQuery = archiveQuery.eq("class_id", filters.class_id);
+      }
+      if (filters.shift) {
+        archiveQuery = archiveQuery.eq("shift", filters.shift);
+      }
+
+      const { data: archiveData, error: archiveError } =
+        await archiveQuery.order("date", { ascending: false });
+
+      // Note: If archive table doesn't exist, just continue with logs only
+      if (
+        archiveError &&
+        !archiveError.message.includes("not found") &&
+        !archiveError.message.includes("no relationship")
+      ) {
+        throw archiveError;
+      }
+
+      // Combine results (deduplicate by id)
+      const allData = [...(logsData || []), ...(archiveData || [])];
+      const seenIds = new Set<string>();
+      const uniqueData = allData.filter((item) => {
+        if (seenIds.has(item.id)) return false;
+        seenIds.add(item.id);
+        return true;
+      });
+
+      // Re-sort combined data
+      uniqueData.sort((a, b) => {
+        const dateCompare =
+          new Date(b.date).getTime() - new Date(a.date).getTime();
+        if (dateCompare !== 0) return dateCompare;
+        return (
+          new Date(b.checked_in_at).getTime() -
+          new Date(a.checked_in_at).getTime()
+        );
+      });
+
+      return uniqueData;
     } catch (error) {
       logger.error("Failed to get attendance with filters", { filters, error });
       throw error;

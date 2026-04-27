@@ -9,10 +9,13 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "type-check": "tsc --noEmit",
-    "test:archive": "node --loader ts-node/esm src/testing/manual-archive-trigger.ts"
+    "test:archive": "node --loader ts-node/esm src/testing/manual-archive-trigger.ts",
+    "test:R2": "node --loader ts-node/esm src/testing/manual-storage-export-trigger.ts"
   },
   "dependencies": {
     "@absensi/shared": "workspace:*",
+    "@aws-sdk/client-s3": "^3.1037.0",
+    "@aws-sdk/s3-request-presigner": "^3.1037.0",
     "@supabase/supabase-js": "^2.38.0",
     "@types/jsonwebtoken": "^9.0.10",
     "compression": "^1.8.1",

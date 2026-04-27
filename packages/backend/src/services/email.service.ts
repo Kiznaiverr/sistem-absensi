@@ -4,8 +4,11 @@ import { createLogger } from "../utils/logger.js";
 import {
   archiveSuccessTemplate,
   archiveFailureTemplate,
+  storageExportSuccessTemplate,
+  storageExportFailureTemplate,
 } from "../utils/email-templates.js";
 import { ArchiveResult } from "../services/archive.service.js";
+import { ExportResult } from "../services/storage-export.service.js";
 
 const logger = createLogger("EmailService");
 
@@ -113,6 +116,62 @@ export class EmailService {
     } catch (error) {
       logger.error("SMTP connection test failed", error);
       throw error;
+    }
+  }
+
+  /**
+   * Send storage export success notification
+   */
+  static async sendStorageExportSuccess(result: ExportResult): Promise<void> {
+    try {
+      const template = storageExportSuccessTemplate(result);
+      const transporter = this.getTransporter();
+
+      const mailOptions = {
+        from: `Storage Export System <${env.SMTP_FROM_EMAIL}>`,
+        to: env.ALERT_EMAIL,
+        subject: template.subject,
+        html: template.html,
+      };
+
+      await transporter.sendMail(mailOptions);
+      logger.info("Storage export success email sent", {
+        to: env.ALERT_EMAIL,
+        exported: result.exported,
+        failed: result.failed,
+      });
+    } catch (error) {
+      logger.error("Failed to send storage export success email", error);
+      // Don't throw - email failure should not break the export job
+    }
+  }
+
+  /**
+   * Send storage export failure notification
+   */
+  static async sendStorageExportError(context: {
+    error: string;
+    timestamp: string;
+  }): Promise<void> {
+    try {
+      const template = storageExportFailureTemplate(context);
+      const transporter = this.getTransporter();
+
+      const mailOptions = {
+        from: `Storage Export System <${env.SMTP_FROM_EMAIL}>`,
+        to: env.ALERT_EMAIL,
+        subject: template.subject,
+        html: template.html,
+      };
+
+      await transporter.sendMail(mailOptions);
+      logger.info("Storage export failure email sent", {
+        to: env.ALERT_EMAIL,
+        error: context.error,
+      });
+    } catch (error) {
+      logger.error("Failed to send storage export failure email", error);
+      // Don't throw - email failure should not break the export job
     }
   }
 }

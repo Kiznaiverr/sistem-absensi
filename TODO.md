@@ -6,8 +6,9 @@
 [x] fix today attendance stat keep reset 
 [x] add check today attendance stat
 [x] notification for archive failed
+[x] exported excel files upload to cloud storage (Cloudflare R2)
 
+[] refactor duplicated excel generator (use shared instead)
 [] move all cache configuration
 [] fully testing
 [] refactor
-[] archived data move to R2
