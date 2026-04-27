@@ -234,8 +234,8 @@ For VPS behind NAT or restricted firewall, use Cloudflare Tunnel to expose appli
 2. **Add to `.env`:**
 
    ```env
-   CLOUDFLARE_TOKEN=your_tunnel_token_here
-   CLOUDFLARE_TUNNEL_ID=your_tunnel_id_here
+   TUNNEL_TOKEN=your_tunnel_token_here
+   TUNNEL_ID=your_tunnel_id_here
    ```
 
 3. **Update docker-compose.yml:**

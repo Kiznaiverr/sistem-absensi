@@ -61,8 +61,8 @@ export const env = {
   ALERT_EMAIL: getEnv("ALERT_EMAIL"),
 
   // Cloudflare Tunnel (Optional - VPS with NAT only)
-  CLOUDFLARE_TOKEN: getEnv("CLOUDFLARE_TOKEN", ""),
-  CLOUDFLARE_TUNNEL_ID: getEnv("CLOUDFLARE_TUNNEL_ID", ""),
+  TUNNEL_ID: getEnv("TUNNEL_ID", ""),
+  TUNNEL_TOKEN: getEnv("TUNNEL_TOKEN", ""),
 } as const;
 
 export default env;
