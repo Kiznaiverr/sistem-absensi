@@ -70,6 +70,10 @@ export const env = {
   // Cloudflare Tunnel (Optional - VPS with NAT only)
   TUNNEL_ID: getEnv("TUNNEL_ID", ""),
   TUNNEL_TOKEN: getEnv("TUNNEL_TOKEN", ""),
+
+  // API Key (for third-party app authentication)
+  API_KEY_ENABLED: getEnv("API_KEY_ENABLED", "true") === "true",
+  API_KEY: getEnv("API_KEY", ""),
 } as const;
 
 export default env;

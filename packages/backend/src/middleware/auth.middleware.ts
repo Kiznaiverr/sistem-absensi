@@ -6,13 +6,14 @@
 
 import { Request, Response, NextFunction } from "express";
 import { AuthService } from "../services/auth.service.js";
+import { ApiKeyService } from "../services/apikey.service.js";
 import { AuditService } from "../utils/audit.js";
 import { createLogger } from "../utils/logger.js";
 
 const logger = createLogger("AuthMiddleware");
 
 /**
- * Extend Express Request to include admin info
+ * Extend Express Request to include admin info and auth source
  */
 declare global {
   namespace Express {
@@ -22,6 +23,7 @@ declare global {
         email: string;
         username: string;
       };
+      auth_source?: "jwt" | "api_key";
     }
   }
 }
@@ -44,10 +46,11 @@ function getUserAgent(req: Request): string | undefined {
 }
 
 /**
- * Validate JWT token from HttpOnly cookie or Authorization header
- * Token precedence:
- * 1. HttpOnly cookie (access_token)
- * 2. Authorization header Bearer schema (backward compatibility)
+ * Validate authorization: API Key OR JWT token
+ * API Key takes precedence if API_KEY_ENABLED is true
+ *
+ * API Key: Header 'X-API-Key'
+ * JWT: HttpOnly cookie (access_token) or Authorization header (Bearer token)
  */
 export async function validateToken(
   req: Request,
@@ -55,6 +58,37 @@ export async function validateToken(
   next: NextFunction,
 ): Promise<void> {
   try {
+    // Priority 1: Check API Key (for third-party apps)
+    const apiKey = req.headers["x-api-key"] as string;
+    if (apiKey && ApiKeyService.isEnabled()) {
+      if (ApiKeyService.validateApiKey(apiKey)) {
+        req.auth_source = "api_key";
+        logger.debug(
+          `Request authenticated via API Key from ${getClientIp(req)}`,
+        );
+        return next();
+      } else {
+        const clientIp = getClientIp(req);
+        const userAgent = getUserAgent(req);
+
+        await AuditService.logInvalidToken(
+          req.path,
+          req.method,
+          clientIp,
+          userAgent,
+          "Invalid API key",
+        );
+
+        res.status(401).json({
+          success: false,
+          error: "Invalid API key",
+          error_code: "INVALID_API_KEY",
+        });
+        return;
+      }
+    }
+
+    // Priority 2: Check JWT Token (for browser/GUI)
     let token: string | undefined;
 
     /**
@@ -132,6 +166,7 @@ export async function validateToken(
       email: decoded.email,
       username: decoded.username,
     };
+    req.auth_source = "jwt";
 
     next();
   } catch (error) {

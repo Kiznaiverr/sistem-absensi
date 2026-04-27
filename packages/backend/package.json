@@ -10,7 +10,8 @@
     "start": "node dist/server.js",
     "type-check": "tsc --noEmit",
     "test:archive": "node --loader ts-node/esm src/testing/manual-archive-trigger.ts",
-    "test:R2": "node --loader ts-node/esm src/testing/manual-storage-export-trigger.ts"
+    "test:R2": "node --loader ts-node/esm src/testing/manual-storage-export-trigger.ts",
+    "test:apikey": "node --loader ts-node/esm src/testing/apikey-testing.ts"
   },
   "dependencies": {
     "@absensi/shared": "workspace:*",

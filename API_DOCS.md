@@ -20,18 +20,35 @@ API ini menyediakan endpoint untuk:
 
 **Authentication:**
 
-- Semua endpoint kecuali `/health` dan `/api/auth/*` memerlukan JWT token
+- Semua endpoint kecuali `/health` dan `/api/auth/*` memerlukan autentikasi
+- Mendukung 2 metode autentikasi:
+  1. **JWT Token** (untuk GUI/Browser) - dalam HttpOnly cookies atau Authorization header
+  2. **API Key** (untuk Third-Party Apps) - via `X-API-Key` header
+
+### Method 1: JWT Token (Browser/GUI)
+
 - Token disimpan dalam **HttpOnly cookies** yang otomatis dikirim browser
 - Backend juga support Authorization header: `Authorization: Bearer <token>` (backward compatibility)
 - Frontend HARUS set `credentials: 'include'` dalam fetch requests untuk HttpOnly cookies bekerja
 
+### Method 2: API Key (Third-Party Integration)
+
+- Konfigurasi API key di `.env` (single key untuk semua third-party apps)
+- Include API key di setiap request via header: `X-API-Key: sk_xxx`
+- **Prioritas:** API Key diperiksa terlebih dahulu, kemudian fallback ke JWT
+- **Use Case:** Aplikasi external tanpa GUI yang perlu akses API
+
 ## Table of Contents
 
 - [Overview](#overview)
+- [Authentication Methods](#authentication-methods)
+  - [Method 1: JWT Token (Browser/GUI)](#method-1-jwt-token-browsergui)
+  - [Method 2: API Key (Third-Party Integration)](#method-2-api-key-third-party-integration)
 - [Rate Limiting](#rate-limiting)
 - [Error Response Format](#error-response-format)
 - [Error Codes](#error-codes)
 - [Token Information (HttpOnly Cookies)](#token-information-httponly-cookies)
+- [API Key Configuration](#api-key-configuration)
 - [Endpoints](#endpoints)
   - [Authentication](#authentication)
     - [1. Login](#1-login)
@@ -65,8 +82,6 @@ API ini menyediakan endpoint untuk:
 - [Database Schema](#database-schema)
 
 ## Rate Limiting
-
-API implements the following rate limits to protect endpoints:
 
 - **Login endpoint** (`POST /api/auth/login`): 10 attempts per 15 minutes per IP
 - **API endpoints** (all others): 20 requests per second per IP
@@ -111,6 +126,7 @@ Semua error response mengikuti format berikut:
 | `TOKEN_VALIDATION_ERROR` | Token validation gagal                 | Error saat verify token                     |
 | `MISSING_REFRESH_TOKEN`  | Refresh token diperlukan               | Refresh token tidak ada di request body     |
 | `INVALID_REFRESH_TOKEN`  | Invalid atau expired refresh token     | Refresh token sudah expired                 |
+| `INVALID_API_KEY`        | Invalid API key                        | API key yang diberikan tidak valid/salah    |
 | `RATE_LIMIT_EXCEEDED`    | Terlalu banyak percobaan               | Rate limit tercapai, tunggu sebelum retry   |
 
 ### Attendance Errors
@@ -182,6 +198,110 @@ const response = await fetch("/api/endpoint", {
 - Backend kirim `Set-Cookie` dengan maxAge=0 untuk clear cookies
 - Browser otomatis hapus cookies
 - Frontend clear sessionStorage (admin data)
+
+---
+
+## API Key Configuration
+
+### Konfigurasi
+
+API Key authentication untuk third-party applications dapat dikonfigurasi di `.env`:
+
+```env
+# Enable/Disable API Key authentication
+API_KEY_ENABLED=true
+
+# API Key (generate dengan: node -e "console.log('sk_' + require('crypto').randomBytes(32).toString('hex'))")
+API_KEY=sk_your_api_key_here_minimum_32_characters_long
+```
+
+### Cara Penggunaan
+
+**Request dengan API Key:**
+
+```bash
+curl -H "X-API-Key: sk_your_api_key_here" \
+  https://api.example.com/api/attendance/batch
+```
+
+**JavaScript/Node.js:**
+
+```javascript
+const response = await fetch("https://api.example.com/api/attendance/batch", {
+  method: "POST",
+  headers: {
+    "X-API-Key": "sk_your_api_key_here",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    batch: [
+      { rfid_id: "card_001", shift: "siang" },
+      { rfid_id: "card_002", shift: "malam" },
+    ],
+    date: "2024-04-27",
+  }),
+});
+
+const data = await response.json();
+```
+
+### Priority Order
+
+API Key authentication priority:
+
+1. **API Key** (header: `X-API-Key`) - checked first
+2. **JWT Token** (cookies or Authorization header) - fallback
+
+Jika API Key valid, request diproses tanpa perlu JWT token.
+
+### Error Responses
+
+**Invalid API Key:**
+
+```json
+{
+  "success": false,
+  "error": "Invalid API key",
+  "error_code": "INVALID_API_KEY"
+}
+```
+
+**Missing API Key (JWT also not provided):**
+
+```json
+{
+  "success": false,
+  "error": "Missing or invalid authorization token",
+  "error_code": "MISSING_TOKEN"
+}
+```
+
+### Security Best Practices
+
+- Store API key dalam `.env` file (tidak di-commit ke git)
+- Jangan hardcode API key di source code atau version control
+- Rotate API key secara berkala jika diperlukan
+- Use HTTPS untuk semua requests yang membawa API key
+- Limit API key access ke endpoint yang diperlukan saja (current: all endpoints support API key)
+
+### Testing API Key
+
+Run testing utility untuk memverifikasi API Key authentication:
+
+```bash
+# Dengan npm
+npm run test:apikey
+
+# Atau langsung
+npx ts-node packages/backend/src/testing/apikey-testing.ts
+```
+
+Testing script akan:
+
+- Test successful requests dengan API Key
+- Test rejection dengan invalid API Key
+- Test rejection tanpa API Key / JWT
+- Verify authentication priority order
 
 ---
 
