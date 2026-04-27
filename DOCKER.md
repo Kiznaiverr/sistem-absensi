@@ -199,12 +199,13 @@ For VPS behind NAT or restricted firewall, use Cloudflare Tunnel to expose appli
 1. **Create tunnel at [Cloudflare Dashboard](https://dash.cloudflare.com/)**
    - Go to "Zero Trust" → "Access" → "Tunnels"
    - Create tunnel named `absensi-tunnel`
-   - Copy the `TUNNEL_TOKEN`
+   - Copy both **Tunnel Token** and **Tunnel ID** from credentials
 
 2. **Add to `.env`:**
 
    ```env
    CLOUDFLARE_TOKEN=your_tunnel_token_here
+   CLOUDFLARE_TUNNEL_ID=your_tunnel_id_here
    ```
 
 3. **Update docker-compose.yml:**

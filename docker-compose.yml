@@ -35,16 +35,16 @@ services:
 
   # Optional: Cloudflare Tunnel for VPS NAT environments
   # Setup:
-  #   1. Create tunnel at https://dash.cloudflare.com/ → Zero Trust → Tunnels
-  #   2. Add CLOUDFLARE_TOKEN to .env
+  #   1. Create tunnel at https://dash.cloudflare.com/ → Zero Trust → Tunnels (get Token & Tunnel ID)
+  #   2. Add CLOUDFLARE_TOKEN and CLOUDFLARE_TUNNEL_ID to .env
   #   3. Replace 'ports:' with 'expose:' in absensi-app above
   #   4. Run: docker-compose --profile vpn up -d
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: absensi-cloudflared
-    command: tunnel run
+    command: tunnel run ${CLOUDFLARE_TUNNEL_ID}
     environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TOKEN}
+      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TOKEN}
     restart: unless-stopped
     profiles:
       - vpn
