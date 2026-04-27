@@ -50,34 +50,64 @@ Health Check: http://localhost:5000/health
 
 ---
 
-## Configuration
+---
 
-Docker Compose automatically reads environment variables from `packages/backend/.env` (your existing development file).
+## Environment Setup (Updated Structure)
 
-**Make sure `.env` exists at:**
+### File Location Change
+
+Environment variables have been **centralized at the project root** for better Docker Compose compatibility:
+
+- **Old location:** `packages/backend/.env` (deprecated)
+- **New location:** `.env` (root directory)
+
+### First Time Setup
+
+1. **Copy template:**
+
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Edit `.env` with your values:**
+
+   ```bash
+   # Linux/Mac
+   nano .env
+
+   # Windows PowerShell
+   code .env
+   ```
+
+3. **Required variables** (all must be filled):
+   - `SUPABASE_URL` and `SUPABASE_SECRET_KEY`
+   - `JWT_SECRET`
+   - `SMTP_*` (for email notifications)
+   - `CLOUDFLARE_TOKEN` and `CLOUDFLARE_TUNNEL_ID` (only if using VPS NAT)
+
+### Why This Change?
+
+- ✅ Docker Compose can parse `${VAR}` substitutions from root `.env`
+- ✅ Single source of truth for all environment config
+- ✅ Standard monorepo pattern
+- ✅ Fixes variable injection issues with Cloudflare Tunnel
+
+---
+
+## Troubleshooting
+
+### Variable Not Set Warning
 
 ```
-packages/backend/.env
+WARNING: The CLOUDFLARE_TOKEN variable is not set
 ```
 
-**With these required values:**
-
-```env
-NODE_ENV=development (or production)
-SERVER_PORT=5000
-SUPABASE_URL=your_url
-SUPABASE_SECRET_KEY=your_key
-JWT_SECRET=your_secret
-# ... other variables
-```
-
-Then run:
+**Solution:** Ensure `.env` exists in root directory:
 
 ```bash
-docker compose up --build
+ls -la .env
+cp .env.example .env  # If missing
 ```
-
-**No need to copy files!** Docker will automatically load environment variables from the existing `packages/backend/.env` file.
 
 ---
 

@@ -1,4 +1,13 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname, resolve } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const rootDir = resolve(__dirname, "../../../../");
+
+// Load .env from root directory
+dotenv.config({ path: resolve(rootDir, ".env") });
 
 const getEnv = (key: string, defaultValue?: string): string => {
   const value = process.env[key];
@@ -50,6 +59,10 @@ export const env = {
   SMTP_PASSWORD: getEnv("SMTP_PASSWORD"),
   SMTP_FROM_EMAIL: getEnv("SMTP_FROM_EMAIL", "noreply@absensi-system.com"),
   ALERT_EMAIL: getEnv("ALERT_EMAIL"),
+
+  // Cloudflare Tunnel (Optional - VPS with NAT only)
+  CLOUDFLARE_TOKEN: getEnv("CLOUDFLARE_TOKEN", ""),
+  CLOUDFLARE_TUNNEL_ID: getEnv("CLOUDFLARE_TUNNEL_ID", ""),
 } as const;
 
 export default env;
