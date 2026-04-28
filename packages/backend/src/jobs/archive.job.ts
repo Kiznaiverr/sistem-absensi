@@ -41,8 +41,10 @@ export function scheduleArchiveJob() {
             duration: `${result.duration}ms`,
           });
 
-          // Send success email
-          await EmailService.sendArchiveSuccess(result);
+          // Send success email only if data was archived
+          if (result.archived > 0) {
+            await EmailService.sendArchiveSuccess(result);
+          }
         } catch (error) {
           logger.error("Archive job failed", error);
 
@@ -95,8 +97,10 @@ export async function triggerArchiveNow(
 
       logger.info("Manual archive completed (this-month-testing)", result);
 
-      // Send success email
-      await EmailService.sendArchiveSuccess(result);
+      // Send success email only if data was archived
+      if (result.archived > 0) {
+        await EmailService.sendArchiveSuccess(result);
+      }
 
       return result;
     }
@@ -109,8 +113,10 @@ export async function triggerArchiveNow(
     const result = await ArchiveService.archiveOldLogs();
     logger.info("Manual archive completed", result);
 
-    // Send success email
-    await EmailService.sendArchiveSuccess(result);
+    // Send success email only if data was archived
+    if (result.archived > 0) {
+      await EmailService.sendArchiveSuccess(result);
+    }
 
     return result;
   } catch (error) {
