@@ -60,23 +60,32 @@ API ini menyediakan endpoint untuk:
     - [6. Monthly Attendance](#6-monthly-attendance)
     - [7. Available Months](#7-available-months)
     - [8. Export Attendance Data (JSON)](#8-export-attendance-data-json)
+  - [Attendance Error Management](#attendance-error-management)
+    - [9. Get Error Logs](#9-get-error-logs)
+    - [10. Get Error Summary by Shift](#10-get-error-summary-by-shift)
+    - [11. Delete Single Error](#11-delete-single-error)
+    - [12. Bulk Delete Errors](#12-bulk-delete-errors)
+    - [13. Delete Errors by Date](#13-delete-errors-by-date)
+    - [14. Delete All Errors](#14-delete-all-errors)
+    - [15. Mark Error as Resolved](#15-mark-error-as-resolved)
+    - [16. Manual Cleanup](#16-manual-cleanup)
   - [Classes and Santri Management](#classes-and-santri-management)
-    - [9. Get All Classes](#9-get-all-classes)
-    - [10. Get Santri by Class](#10-get-santri-by-class)
-    - [11. Get All Santri (Optional Filters)](#11-get-all-santri-optional-filters)
-    - [12. Reinitialize Cache (Debug)](#12-reinitialize-cache-debug)
+    - [17. Get All Classes](#17-get-all-classes)
+    - [18. Get Santri by Class](#18-get-santri-by-class)
+    - [19. Get All Santri (Optional Filters)](#19-get-all-santri-optional-filters)
+    - [20. Reinitialize Cache (Debug)](#20-reinitialize-cache-debug)
   - [Santri Import Background Job](#santri-import-background-job)
-    - [13. Download Santri Import Template](#13-download-santri-import-template)
-    - [14. Create Import Job](#14-create-import-job)
-    - [15. Get Import Job Status](#15-get-import-job-status)
-    - [16. Subscribe Import Progress (SSE)](#16-subscribe-import-progress-sse)
-    - [17. Get Import Error Rows](#17-get-import-error-rows)
-    - [18. Export Import Errors (Excel)](#18-export-import-errors-excel)
+    - [21. Download Santri Import Template](#21-download-santri-import-template)
+    - [22. Create Import Job](#22-create-import-job)
+    - [23. Get Import Job Status](#23-get-import-job-status)
+    - [24. Subscribe Import Progress (SSE)](#24-subscribe-import-progress-sse)
+    - [25. Get Import Error Rows](#25-get-import-error-rows)
+    - [26. Export Import Errors (Excel)](#26-export-import-errors-excel)
   - [Administrative](#administrative)
-    - [19. Health Check](#19-health-check)
-    - [20. System Statistics](#20-system-statistics)
-    - [21. Archive Status](#21-archive-status)
-    - [22. Archive History](#22-archive-history)
+    - [27. Health Check](#27-health-check)
+    - [28. System Statistics](#28-system-statistics)
+    - [29. Archive Status](#29-archive-status)
+    - [30. Archive History](#30-archive-history)
 - [Shift Configuration](#shift-configuration)
 - [Response Codes](#response-codes)
 - [Database Schema](#database-schema)
@@ -848,9 +857,380 @@ curl -X GET "http://localhost:5000/api/attendance/export?month=4&year=2026&shift
 
 ---
 
+### Attendance Error Management
+
+Endpoint untuk mengelola error logs dari RFID scanning. Errors disimpan otomatis ke database selama 24 jam, lalu otomatis dihapus. Hanya errors yang sebenarnya yang di-log (duplikat/already_checked tidak di-log).
+
+**Auto Cleanup:** Errors older than 24 hours dihapus otomatis setiap jam.
+**Shift-End Notification:** Email summary dikirim otomatis saat shift end (SHIFT_SIANG_END, SHIFT_MALAM_END).
+
+#### 9. Get Error Logs
+
+```
+GET /api/attendance/errors
+```
+
+**Deskripsi:** Get error logs dengan optional filtering. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Query Parameters:**
+
+- `limit` (number, optional): Max records per page (default: 50, max: 500)
+- `offset` (number, optional): Pagination offset (default: 0)
+- `error_code` (string, optional): Filter by error code (e.g., RFID_NOT_FOUND)
+- `request_date` (string, optional): Filter by date (format: YYYY-MM-DD)
+- `resolved` (boolean, optional): Filter by resolution status (true/false)
+- `rfid_id` (string, optional): Search RFID ID (partial match)
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "data": [
+      {
+        "id": "uuid-001",
+        "rfid_id": "RFD001001",
+        "error_code": "RFID_NOT_FOUND",
+        "error_message": "RFID tidak ditemukan di data santri",
+        "shift": null,
+        "santri_id": null,
+        "santri_name": null,
+        "timestamp": "2026-04-28T15:30:45.000Z",
+        "request_date": "2026-04-28",
+        "resolved": false,
+        "created_at": "2026-04-28T15:30:45.000Z",
+        "expires_at": "2026-04-29T15:30:45.000Z"
+      }
+    ],
+    "count": 1,
+    "total": 15
+  }
+}
+```
+
+**cURL - Get all errors:**
+
+```bash
+curl -X GET "http://localhost:5000/api/attendance/errors" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**cURL - Filter by error code:**
+
+```bash
+curl -X GET "http://localhost:5000/api/attendance/errors?error_code=RFID_NOT_FOUND" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
+#### 10. Get Error Summary by Shift
+
+```
+GET /api/attendance/errors/summary/:shift
+```
+
+**Deskripsi:** Get error summary untuk shift tertentu (untuk email notification). Errors di-group by error_code dengan detail rows. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Path Parameters:**
+
+- `shift` (string, required): "siang" atau "malam"
+
+**Query Parameters:**
+
+- `date` (string, optional): Format YYYY-MM-DD. Default: hari ini
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "total_errors": 5,
+    "errors_by_code": [
+      {
+        "error_code": "RFID_NOT_FOUND",
+        "error_message": "RFID tidak ditemukan di data santri",
+        "count": 3,
+        "details": []
+      }
+    ]
+  }
+}
+```
+
+**cURL:**
+
+```bash
+curl -X GET "http://localhost:5000/api/attendance/errors/summary/siang" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
+#### 11. Delete Single Error
+
+```
+DELETE /api/attendance/errors/:id
+```
+
+**Deskripsi:** Delete error log berdasarkan ID. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "message": "Error log deleted successfully"
+}
+```
+
+**cURL:**
+
+```bash
+curl -X DELETE "http://localhost:5000/api/attendance/errors/uuid-001" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
+#### 12. Bulk Delete Errors
+
+```
+POST /api/attendance/errors/bulk-delete
+```
+
+**Deskripsi:** Delete multiple error logs berdasarkan array IDs. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```json
+{
+  "ids": ["uuid-001", "uuid-002", "uuid-003"]
+}
+```
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "message": "Error logs deleted successfully",
+  "data": {
+    "deleted": 3
+  }
+}
+```
+
+**cURL:**
+
+```bash
+curl -X POST "http://localhost:5000/api/attendance/errors/bulk-delete" \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ids": ["uuid-001", "uuid-002"]
+  }'
+```
+
+---
+
+#### 13. Delete Errors by Date
+
+```
+DELETE /api/attendance/errors/by-date/:date
+```
+
+**Deskripsi:** Delete semua error logs untuk tanggal tertentu. Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Path Parameters:**
+
+- `date` (string): Format YYYY-MM-DD
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "message": "Error logs for date deleted successfully",
+  "data": {
+    "deleted": 15
+  }
+}
+```
+
+**cURL:**
+
+```bash
+curl -X DELETE "http://localhost:5000/api/attendance/errors/by-date/2026-04-28" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
+#### 14. Delete All Errors
+
+```
+DELETE /api/attendance/errors
+```
+
+**Deskripsi:** Delete ALL error logs. Require confirmation. **CAUTION: This action cannot be undone.**
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```json
+{
+  "confirm_delete": "true"
+}
+```
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "message": "All error logs deleted successfully",
+  "data": {
+    "deleted": 120
+  }
+}
+```
+
+**cURL:**
+
+```bash
+curl -X DELETE "http://localhost:5000/api/attendance/errors" \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"confirm_delete": "true"}'
+```
+
+---
+
+#### 15. Mark Error as Resolved
+
+```
+PATCH /api/attendance/errors/:id/resolve
+```
+
+**Deskripsi:** Mark error as resolved (manual acknowledgement). Memerlukan token.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+Content-Type: application/json
+```
+
+**Request Body (optional):**
+
+```json
+{
+  "resolved_by": "admin-name",
+  "notes": "Error resolved - RFID updated"
+}
+```
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "message": "Error marked as resolved"
+}
+```
+
+**cURL:**
+
+```bash
+curl -X PATCH "http://localhost:5000/api/attendance/errors/uuid-001/resolve" \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resolved_by": "admin",
+    "notes": "RFID re-registered"
+  }'
+```
+
+---
+
+#### 16. Manual Cleanup
+
+```
+POST /api/attendance/errors/cleanup
+```
+
+**Deskripsi:** Manual trigger untuk cleanup error logs yang expired (>24h). Biasanya berjalan otomatis setiap jam.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "message": "Expired error logs cleaned up",
+  "data": {
+    "deleted": 25
+  }
+}
+```
+
+**cURL:**
+
+```bash
+curl -X POST "http://localhost:5000/api/attendance/errors/cleanup" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
 ### Classes and Santri Management
 
-#### 9. Get All Classes
+#### 17. Get All Classes
 
 ```
 GET /api/classes
@@ -904,7 +1284,7 @@ curl -X GET http://localhost:5000/api/classes \
 
 ---
 
-#### 10. Get Santri by Class
+#### 18. Get Santri by Class
 
 ```
 GET /api/classes/:classId/santri
@@ -957,7 +1337,7 @@ curl -X GET http://localhost:5000/api/classes/uuid-smp1/santri \
 
 ---
 
-#### 11. Get All Santri (Optional Filters)
+#### 19. Get All Santri (Optional Filters)
 
 ```
 GET /api/santri
@@ -1016,7 +1396,7 @@ curl -X GET "http://localhost:5000/api/santri?is_active=true&search=ahmad" \
 
 ---
 
-#### 12. Reinitialize Cache (Debug)
+#### 20. Reinitialize Cache (Debug)
 
 ```
 POST /api/classes/init-cache
@@ -1055,7 +1435,7 @@ curl -X POST http://localhost:5000/api/classes/init-cache \
 
 ### Santri Import Background Job
 
-#### 13. Download Santri Import Template
+#### 21. Download Santri Import Template
 
 ```
 GET /api/santri/template
@@ -1081,7 +1461,7 @@ curl -X GET http://localhost:5000/api/santri/template \
 
 ---
 
-#### 14. Create Import Job
+#### 22. Create Import Job
 
 ```
 POST /api/santri/import-jobs
@@ -1131,7 +1511,7 @@ curl -X POST http://localhost:5000/api/santri/import-jobs \
 
 ---
 
-#### 15. Get Import Job Status
+#### 23. Get Import Job Status
 
 ```
 GET /api/santri/import-jobs/:jobId
@@ -1175,7 +1555,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-#### 16. Subscribe Import Progress (SSE)
+#### 24. Subscribe Import Progress (SSE)
 
 ```
 GET /api/santri/import-jobs/:jobId/progress
@@ -1208,7 +1588,7 @@ Accept: text/event-stream
 
 ---
 
-#### 17. Get Import Error Rows
+#### 25. Get Import Error Rows
 
 ```
 GET /api/santri/import-jobs/:jobId/errors
@@ -1245,7 +1625,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-#### 18. Export Import Errors (Excel)
+#### 26. Export Import Errors (Excel)
 
 ```
 GET /api/santri/import-jobs/:jobId/errors/export
@@ -1273,7 +1653,7 @@ curl -X GET http://localhost:5000/api/santri/import-jobs/<job-id>/errors/export 
 
 ### Administrative
 
-#### 19. Health Check
+#### 27. Health Check
 
 ```
 GET /health
@@ -1298,7 +1678,7 @@ curl -X GET http://localhost:5000/health
 
 ---
 
-#### 20. System Statistics
+#### 28. System Statistics
 
 ```
 GET /api/admin/stats
@@ -1351,7 +1731,7 @@ curl -X GET http://localhost:5000/api/admin/stats \
 
 ---
 
-#### 21. Archive Status
+#### 29. Archive Status
 
 ```
 GET /api/admin/archive/status
@@ -1390,7 +1770,7 @@ curl -X GET http://localhost:5000/api/admin/archive/status \
 
 ---
 
-#### 22. Archive History
+#### 30. Archive History
 
 ```
 GET /api/admin/archive/history
@@ -1585,8 +1965,45 @@ FRONTEND_URL=http://localhost:3000,http://localhost:5000
 
 ---
 
+---
+
+## Error Logging Behavior
+
+### Errors Logged to Database
+
+Following errors are automatically logged to `attendance_error_logs` table:
+
+- ✅ `RFID_NOT_FOUND` - RFID card not registered
+- ✅ `OUTSIDE_HOURS` - Scan outside shift hours
+- ✅ `INACTIVE_SANTRI` - Student marked as inactive
+- ✅ `DUPLICATE_IN_BATCH` - Same RFID twice in batch
+- ✅ `DATABASE_ERROR` - Database operation failed
+- ✅ `VALIDATION_ERROR` - Data validation failed
+
+### Errors NOT Logged (Intentional User Actions)
+
+- ❌ `ALREADY_CHECKED_SIANG` - Student already checked in this shift
+- ❌ `ALREADY_CHECKED_MALAM` - Student already checked in this shift
+
+These are intentional duplicate attempts and not system errors, so not logged.
+
+### Auto-Cleanup
+
+- **Retention:** 24 hours
+- **Auto-delete:** Every hour (runs at minute 0)
+- **Manual cleanup:** `POST /api/attendance/errors/cleanup`
+
+### Shift-End Notification
+
+- **Siang:** Email sent at 16:00 (SHIFT_SIANG_END)
+- **Malam:** Email sent at 21:00 (SHIFT_MALAM_END)
+- **Content:** Error summary table grouped by error_code with RFID details
+- **Schedule:** Daily at configured shift end times
+
+---
+
 ## Version
 
 **API Version:** 1.0.0
 **Status:** Stable
-**Last Updated:** April 25, 2026
+**Last Updated:** April 28, 2026

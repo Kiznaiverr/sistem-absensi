@@ -12,6 +12,7 @@ import { AttendanceService } from "./services/attendance.service.js";
 import { enforceHttps } from "./middleware/https.middleware.js";
 import { httpLoggingMiddleware } from "./middleware/http-logging.middleware.js";
 import attendanceRoutes from "./routes/attendance.js";
+import errorRoutes from "./routes/errors.js";
 import classesRoutes from "./routes/classes.js";
 import adminRoutes from "./routes/admin.js";
 import santriRoutes from "./routes/santri.js";
@@ -187,6 +188,8 @@ app.use("/api/auth", authRoutes);
  * All routes require valid JWT token and rate limiting (20 req/sec per IP)
  */
 app.use("/api/attendance", validateToken, apiLimiter, attendanceRoutes);
+app.use("/api/attendance/errors", validateToken, apiLimiter, errorRoutes);
+app.use("/api/attendance/errors", validateToken, apiLimiter, errorRoutes);
 app.use("/api/classes", validateToken, apiLimiter, classesRoutes);
 app.use("/api/santri", validateToken, apiLimiter, santriRoutes);
 app.use("/api/admin", validateToken, apiLimiter, adminRoutes);

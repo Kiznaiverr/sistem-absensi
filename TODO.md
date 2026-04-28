@@ -7,8 +7,8 @@
 [x] add check today attendance stat
 [x] notification for archive failed
 [x] exported excel files upload to cloud storage (Cloudflare R2)
-[] add apikey auth method on api endpoint
-[] add check error endpoint for absen failed
+[x] add apikey auth method on api endpoint
+[x] add check error endpoint for absen failed
 [] add search in check absensi per class page
 [] refactor duplicated excel generator (use shared instead)
 [] move all cache configuration

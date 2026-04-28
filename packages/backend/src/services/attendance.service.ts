@@ -12,6 +12,7 @@ import {
 } from "@absensi/shared/types";
 import { DatabaseService } from "./database.service.js";
 import { cacheService } from "./cache.service.js";
+import { AttendanceErrorService } from "./attendance-error.service.js";
 import { createLogger } from "../utils/logger.js";
 import {
   detectShift,
@@ -232,6 +233,13 @@ export class AttendanceService {
           error: validation.message,
           error_code: validation.code,
         });
+        // Log validation error
+        await AttendanceErrorService.logError({
+          rfid_id,
+          error_code: validation.code,
+          error_message: validation.message,
+          timestamp,
+        });
         continue;
       }
 
@@ -241,6 +249,13 @@ export class AttendanceService {
           rfid_id,
           error: ERROR_MESSAGES[ERROR_CODES.DUPLICATE_IN_BATCH],
           error_code: ERROR_CODES.DUPLICATE_IN_BATCH,
+        });
+        // Log batch duplicate error
+        await AttendanceErrorService.logError({
+          rfid_id,
+          error_code: ERROR_CODES.DUPLICATE_IN_BATCH,
+          error_message: ERROR_MESSAGES[ERROR_CODES.DUPLICATE_IN_BATCH],
+          timestamp,
         });
         continue;
       }
@@ -254,6 +269,13 @@ export class AttendanceService {
             error: ERROR_MESSAGES[ERROR_CODES.RFID_NOT_FOUND],
             error_code: ERROR_CODES.RFID_NOT_FOUND,
           });
+          // Log RFID not found error
+          await AttendanceErrorService.logError({
+            rfid_id,
+            error_code: ERROR_CODES.RFID_NOT_FOUND,
+            error_message: ERROR_MESSAGES[ERROR_CODES.RFID_NOT_FOUND],
+            timestamp,
+          });
           continue;
         }
 
@@ -263,6 +285,16 @@ export class AttendanceService {
             rfid_id,
             error: ERROR_MESSAGES[ERROR_CODES.INACTIVE_SANTRI],
             error_code: ERROR_CODES.INACTIVE_SANTRI,
+          });
+          // Log inactive santri error
+          await AttendanceErrorService.logError({
+            rfid_id,
+            error_code: ERROR_CODES.INACTIVE_SANTRI,
+            error_message: ERROR_MESSAGES[ERROR_CODES.INACTIVE_SANTRI],
+            santri_id: cachedSantri.santri_id,
+            santri_name: cachedSantri.name,
+            class_id: cachedSantri.class_id,
+            timestamp,
           });
           continue;
         }
@@ -275,6 +307,16 @@ export class AttendanceService {
             error: ERROR_MESSAGES[ERROR_CODES.OUTSIDE_HOURS],
             error_code: ERROR_CODES.OUTSIDE_HOURS,
           });
+          // Log outside hours error
+          await AttendanceErrorService.logError({
+            rfid_id,
+            error_code: ERROR_CODES.OUTSIDE_HOURS,
+            error_message: ERROR_MESSAGES[ERROR_CODES.OUTSIDE_HOURS],
+            santri_id: cachedSantri.santri_id,
+            santri_name: cachedSantri.name,
+            class_id: cachedSantri.class_id,
+            timestamp,
+          });
           continue;
         }
 
@@ -285,6 +327,17 @@ export class AttendanceService {
             shift,
             error: ERROR_MESSAGES[ERROR_CODES.OUTSIDE_HOURS],
             error_code: ERROR_CODES.OUTSIDE_HOURS,
+          });
+          // Log outside hours error
+          await AttendanceErrorService.logError({
+            rfid_id,
+            error_code: ERROR_CODES.OUTSIDE_HOURS,
+            error_message: ERROR_MESSAGES[ERROR_CODES.OUTSIDE_HOURS],
+            shift,
+            santri_id: cachedSantri.santri_id,
+            santri_name: cachedSantri.name,
+            class_id: cachedSantri.class_id,
+            timestamp,
           });
           continue;
         }
@@ -308,6 +361,7 @@ export class AttendanceService {
             error_code: errorCode,
             already_checked_at: checkedTime,
           });
+          // Note: ALREADY_CHECKED errors are NOT logged (as per requirement)
           continue;
         }
 
@@ -353,6 +407,13 @@ export class AttendanceService {
           rfid_id,
           error: ERROR_MESSAGES[ERROR_CODES.DATABASE_ERROR],
           error_code: ERROR_CODES.DATABASE_ERROR,
+        });
+        // Log database error
+        await AttendanceErrorService.logError({
+          rfid_id,
+          error_code: ERROR_CODES.DATABASE_ERROR,
+          error_message: ERROR_MESSAGES[ERROR_CODES.DATABASE_ERROR],
+          timestamp,
         });
       }
     }

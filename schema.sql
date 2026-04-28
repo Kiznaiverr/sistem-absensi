@@ -97,6 +97,35 @@ CREATE TABLE IF NOT EXISTS archive_operations (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Attendance Error Logs (with 24h TTL auto-delete)
+CREATE TABLE IF NOT EXISTS attendance_error_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  rfid_id VARCHAR(255) NOT NULL,
+  error_code VARCHAR(50) NOT NULL,
+  error_message TEXT NOT NULL,
+  shift VARCHAR(10),                        -- NULL if error before shift determined
+  santri_id UUID,                           -- NULL if RFID_NOT_FOUND
+  class_id UUID,                            -- NULL if santri not found
+  santri_name VARCHAR(255),                 -- For reference
+  timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+  request_date DATE NOT NULL,               -- For filtering by date
+  resolved BOOLEAN DEFAULT false,
+  resolved_by UUID REFERENCES admins(id) ON DELETE SET NULL,
+  resolved_at TIMESTAMP WITH TIME ZONE,
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  
+  -- For 24h TTL auto-delete
+  expires_at TIMESTAMP WITH TIME ZONE DEFAULT (CURRENT_TIMESTAMP + INTERVAL '24 hours')
+);
+
+CREATE INDEX idx_attendance_error_logs_expires_at ON attendance_error_logs(expires_at);
+CREATE INDEX idx_attendance_error_logs_request_date ON attendance_error_logs(request_date);
+CREATE INDEX idx_attendance_error_logs_resolved ON attendance_error_logs(resolved);
+CREATE INDEX idx_attendance_error_logs_error_code ON attendance_error_logs(error_code);
+CREATE INDEX idx_attendance_error_logs_rfid_id ON attendance_error_logs(rfid_id);
+CREATE INDEX idx_attendance_error_logs_created_at ON attendance_error_logs(created_at DESC);
+
 -- Santri import background jobs
 CREATE TABLE IF NOT EXISTS santri_import_jobs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
