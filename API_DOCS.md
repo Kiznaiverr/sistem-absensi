@@ -1973,17 +1973,17 @@ FRONTEND_URL=http://localhost:3000,http://localhost:5000
 
 Following errors are automatically logged to `attendance_error_logs` table:
 
-- ✅ `RFID_NOT_FOUND` - RFID card not registered
-- ✅ `OUTSIDE_HOURS` - Scan outside shift hours
-- ✅ `INACTIVE_SANTRI` - Student marked as inactive
-- ✅ `DUPLICATE_IN_BATCH` - Same RFID twice in batch
-- ✅ `DATABASE_ERROR` - Database operation failed
-- ✅ `VALIDATION_ERROR` - Data validation failed
+- `RFID_NOT_FOUND` - RFID card not registered
+- `OUTSIDE_HOURS` - Scan outside shift hours
+- `INACTIVE_SANTRI` - Student marked as inactive
+- `DUPLICATE_IN_BATCH` - Same RFID twice in batch
+- `DATABASE_ERROR` - Database operation failed
+- `VALIDATION_ERROR` - Data validation failed
 
 ### Errors NOT Logged (Intentional User Actions)
 
-- ❌ `ALREADY_CHECKED_SIANG` - Student already checked in this shift
-- ❌ `ALREADY_CHECKED_MALAM` - Student already checked in this shift
+- `ALREADY_CHECKED_SIANG` - Student already checked in this shift
+- `ALREADY_CHECKED_MALAM` - Student already checked in this shift
 
 These are intentional duplicate attempts and not system errors, so not logged.
 
