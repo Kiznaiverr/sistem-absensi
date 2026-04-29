@@ -165,7 +165,16 @@ export class AttendanceService {
 
       return this.mapSantriToCache(santri, santri.class);
     } catch (error) {
-      logger.error("Failed to get santri by RFID", { rfidId, error });
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      logger.error("Failed to get santri by RFID", {
+        rfidId,
+        error_message: errorMessage,
+        error_stack: errorStack,
+        error_type:
+          error instanceof Error ? error.constructor.name : typeof error,
+      });
       throw error;
     }
   }
@@ -223,7 +232,16 @@ export class AttendanceService {
     const processedInBatch = new Set<string>();
 
     for (const item of request.batch) {
-      const { rfid_id, shift: overrideShift, timestamp } = item;
+      let { rfid_id, shift: overrideShift, timestamp } = item;
+
+      // Defensive: ensure timestamp is set (should be set by route handler, but just in case)
+      if (!timestamp) {
+        timestamp = Date.now();
+        logger.debug("Timestamp missing in batch item, using current time", {
+          rfid_id,
+          timestamp,
+        });
+      }
 
       // Validate RFID ID
       const validation = validateRFIDId(rfid_id);
@@ -366,19 +384,53 @@ export class AttendanceService {
         }
 
         // Record attendance to database
-        await DatabaseService.recordAttendance(
-          cachedSantri.santri_id,
-          cachedSantri.class_id,
-          today,
-          shift,
-        );
+        try {
+          await DatabaseService.recordAttendance(
+            cachedSantri.santri_id,
+            cachedSantri.class_id,
+            today,
+            shift,
+          );
+          logger.debug("Attendance recorded to database", {
+            rfid_id,
+            santri_id: cachedSantri.santri_id,
+          });
+        } catch (dbError) {
+          const errorMessage =
+            dbError instanceof Error ? dbError.message : String(dbError);
+          const errorStack =
+            dbError instanceof Error ? dbError.stack : undefined;
+          logger.error("Database recordAttendance failed", {
+            rfid_id,
+            error_message: errorMessage,
+            error_stack: errorStack,
+            error_type:
+              dbError instanceof Error
+                ? dbError.constructor.name
+                : typeof dbError,
+          });
+          throw dbError;
+        }
 
         processedInBatch.add(rfid_id);
 
         // Update cache
-        const shiftMap =
-          shift === "siang" ? attendanceToday.siang : attendanceToday.malam;
-        shiftMap.set(rfid_id, timestamp);
+        try {
+          const shiftMap =
+            shift === "siang" ? attendanceToday.siang : attendanceToday.malam;
+          shiftMap.set(rfid_id, timestamp);
+          logger.debug("Cache updated", { rfid_id, shift });
+        } catch (cacheError) {
+          const errorMessage =
+            cacheError instanceof Error
+              ? cacheError.message
+              : String(cacheError);
+          logger.error("Cache update failed", {
+            rfid_id,
+            error_message: errorMessage,
+          });
+          // Don't throw, cache update is not critical
+        }
 
         // Prepare success response
         const checkedTime = formatTime(new Date(timestamp));
@@ -402,7 +454,16 @@ export class AttendanceService {
           time: checkedTime,
         });
       } catch (error) {
-        logger.error("Failed to process attendance", { rfid_id, error });
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
+        logger.error("Failed to process attendance", {
+          rfid_id,
+          error_message: errorMessage,
+          error_stack: errorStack,
+          error_type:
+            error instanceof Error ? error.constructor.name : typeof error,
+        });
         response.errors.push({
           rfid_id,
           error: ERROR_MESSAGES[ERROR_CODES.DATABASE_ERROR],

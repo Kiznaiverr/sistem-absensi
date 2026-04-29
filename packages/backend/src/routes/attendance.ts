@@ -104,19 +104,42 @@ router.post(
 
       /**
        * Auto-detect shift if not provided for any item in batch
+       * Also auto-set timestamp if not provided
        */
       if (body.batch && Array.isArray(body.batch)) {
         body.batch = body.batch.map((item: any) => {
-          if (!item.shift) {
+          const updatedItem = { ...item };
+
+          // Auto-set timestamp if not provided (use current time in milliseconds)
+          if (!updatedItem.timestamp) {
+            updatedItem.timestamp = Date.now();
+            logger.debug("Timestamp not provided, using current time", {
+              rfid_id: updatedItem.rfid_id,
+              timestamp: updatedItem.timestamp,
+            });
+          }
+
+          // Auto-detect shift if not provided
+          if (!updatedItem.shift) {
             const detectedShift = detectShift();
+            logger.debug("Auto-detecting shift for RFID", {
+              rfid_id: updatedItem.rfid_id,
+              detected_shift: detectedShift,
+            });
             if (!detectedShift) {
               // If shift cannot be detected (outside hours), we'll let the service handle it
               // and return OUTSIDE_HOURS error for consistency
-              return item;
+              logger.debug(
+                "Shift cannot be auto-detected, item will be processed without shift",
+                {
+                  rfid_id: updatedItem.rfid_id,
+                },
+              );
+              return updatedItem;
             }
-            return { ...item, shift: detectedShift };
+            return { ...updatedItem, shift: detectedShift };
           }
-          return item;
+          return updatedItem;
         });
       }
 

@@ -552,6 +552,7 @@ X-API-Key: sk_xxx
 - `batch` (array, required): Array of RFID scans
   - `rfid_id` (string): Unique RFID card identifier
   - `shift` (string, optional): "siang" or "malam". Default: auto-detect berdasarkan jam saat ini. Jika jam diluar shift → error `OUTSIDE_HOURS`
+  - `timestamp` (number, optional): Unix timestamp in milliseconds. Default: current time
 - `date` (string, optional): Format YYYY-MM-DD. Default: hari ini
 
 **Behavior berdasarkan Auth Source:**
@@ -560,8 +561,9 @@ X-API-Key: sk_xxx
 | ------------------------------------ | ----------------------------------- | ----------------------------------- |
 | Tidak ada `shift`                    | Auto-detect dari jam saat ini       | Auto-detect dari jam saat ini       |
 | Tidak ada `date`                     | Gunakan hari ini                    | Gunakan hari ini                    |
+| Tidak ada `timestamp`                | Gunakan waktu sekarang              | Gunakan waktu sekarang              |
 | Diluar jam shift & shift auto-detect | Error `OUTSIDE_HOURS`               | Error `OUTSIDE_HOURS`               |
-| Diluar jam shift tapi shift explicit | ⚠️ Masih dicek jam (possible error) | ⚠️ Masih dicek jam (possible error) |
+| Diluar jam shift tapi shift explicit | Masih dicek jam (possible error) | Masih dicek jam (possible error) |
 
 **Response (Success - HTTP 200):**
 
