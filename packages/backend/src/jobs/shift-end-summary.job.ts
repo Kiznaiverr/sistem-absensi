@@ -83,29 +83,36 @@ async function triggerShiftEndSummary(shift: "siang" | "malam"): Promise<void> {
       error_codes_count: errorSummary.errors_by_code.length,
     });
 
-    // Send email with summary (even if no errors - admin wants to know all is clear)
-    await EmailService.sendShiftEndErrorSummary({
-      shift,
-      date,
-      total_errors: errorSummary.total_errors,
-      errors_by_code: errorSummary.errors_by_code.map((group) => ({
-        error_code: group.error_code,
-        error_message: group.error_message,
-        count: group.count,
-        details: group.details.map((detail) => ({
-          rfid_id: detail.rfid_id,
-          santri_name: detail.santri_name,
-          timestamp: detail.timestamp,
-          error_message: detail.error_message,
+    // Only send email if there are errors
+    if (errorSummary.total_errors > 0) {
+      await EmailService.sendShiftEndErrorSummary({
+        shift,
+        date,
+        total_errors: errorSummary.total_errors,
+        errors_by_code: errorSummary.errors_by_code.map((group) => ({
+          error_code: group.error_code,
+          error_message: group.error_message,
+          count: group.count,
+          details: group.details.map((detail) => ({
+            rfid_id: detail.rfid_id,
+            santri_name: detail.santri_name,
+            timestamp: detail.timestamp,
+            error_message: detail.error_message,
+          })),
         })),
-      })),
-    });
+      });
 
-    logger.info("Shift-end error summary email sent", {
-      shift,
-      date,
-      total_errors: errorSummary.total_errors,
-    });
+      logger.info("Shift-end error summary email sent", {
+        shift,
+        date,
+        total_errors: errorSummary.total_errors,
+      });
+    } else {
+      logger.info("No errors found for shift, skipping email notification", {
+        shift,
+        date,
+      });
+    }
   } catch (error) {
     logger.error("Failed to trigger shift-end summary", { shift, error });
     // Don't throw - failure should not break the job scheduler
