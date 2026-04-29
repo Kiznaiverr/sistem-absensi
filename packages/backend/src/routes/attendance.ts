@@ -16,14 +16,19 @@ import {
   validateBatchRequest,
   validateDateFormat,
 } from "../utils/validators.js";
-import { getCurrentMonthYear } from "../utils/time.js";
+import {
+  getCurrentMonthYear,
+  getCurrentDateString,
+  detectShift,
+} from "../utils/time.js";
 
 const router: ExpressRouter = Router();
 const logger = createLogger("AttendanceRoutes");
 
 /**
- * Validation middleware for batch attendance
- * Validates RFID IDs and shift values have correct format
+ * Validation middleware for batch attendance - conditional based on auth source
+ * - API Key (ESP32): shift and date are completely optional (will be auto-detected)
+ * - JWT (GUI): shift optional with auto-detect, date optional (defaults to today)
  */
 const validateBatchAttendanceMiddleware = [
   body("batch")
@@ -36,13 +41,13 @@ const validateBatchAttendanceMiddleware = [
     .isLength({ min: 1, max: 255 })
     .withMessage("RFID ID must be between 1 and 255 characters"),
   body("batch.*.shift")
+    .optional()
     .trim()
     .isIn(["siang", "malam"])
     .withMessage("Shift must be either 'siang' or 'malam'"),
   body("date")
+    .optional()
     .trim()
-    .notEmpty()
-    .withMessage("Date is required")
     .matches(/^\d{4}-\d{2}-\d{2}$/)
     .withMessage("Date must be in YYYY-MM-DD format"),
 ];
@@ -74,7 +79,11 @@ const handleValidationErrors = (
 /**
  * POST /api/attendance/batch
  * Process batch of RFID attendance scans
- * Request body: { batch: Array<{rfid_id, shift}>, date: YYYY-MM-DD }
+ *
+ * For API Key (ESP32): shift and date are optional, will be auto-detected
+ * For JWT (GUI): shift and date can be provided or auto-detected
+ *
+ * Request body: { batch: Array<{rfid_id, shift?}>, date?: YYYY-MM-DD }
  * Response: { success, data: { processed, failed, errors } }
  */
 router.post(
@@ -83,7 +92,33 @@ router.post(
   handleValidationErrors,
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const body = req.body as BatchAttendanceRequest;
+      let body = req.body as BatchAttendanceRequest;
+
+      /**
+       * Auto-detect date if not provided (use today)
+       */
+      if (!body.date) {
+        body.date = getCurrentDateString();
+        logger.debug("Date not provided, using today", { date: body.date });
+      }
+
+      /**
+       * Auto-detect shift if not provided for any item in batch
+       */
+      if (body.batch && Array.isArray(body.batch)) {
+        body.batch = body.batch.map((item: any) => {
+          if (!item.shift) {
+            const detectedShift = detectShift();
+            if (!detectedShift) {
+              // If shift cannot be detected (outside hours), we'll let the service handle it
+              // and return OUTSIDE_HOURS error for consistency
+              return item;
+            }
+            return { ...item, shift: detectedShift };
+          }
+          return item;
+        });
+      }
 
       /**
        * Validate batch request using service-level validation

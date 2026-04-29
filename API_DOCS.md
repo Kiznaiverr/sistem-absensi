@@ -513,10 +513,21 @@ POST /api/attendance/batch
 
 **Deskripsi:** Process batch RFID scans. Validasi duplikat, deteksi shift, dan record ke database. Memerlukan token.
 
+**Authentication:**
+
+- JWT Token (GUI/Browser) - optional parameters, auto-detect supported
+- API Key (ESP32/Third-party) - all parameters optional, full auto-detect
+
 **Headers:**
 
 ```
 Authorization: Bearer <access_token>
+```
+
+atau untuk API Key:
+
+```
+X-API-Key: sk_xxx
 ```
 
 **Request Body:**
@@ -529,8 +540,7 @@ Authorization: Bearer <access_token>
       "shift": "siang"
     },
     {
-      "rfid_id": "RFD001002",
-      "shift": "siang"
+      "rfid_id": "RFD001002"
     }
   ],
   "date": "2026-04-11"
@@ -541,8 +551,17 @@ Authorization: Bearer <access_token>
 
 - `batch` (array, required): Array of RFID scans
   - `rfid_id` (string): Unique RFID card identifier
-  - `shift` (string, optional): "siang" or "malam". Jika tidak ada, auto-detect berdasarkan waktu
+  - `shift` (string, optional): "siang" or "malam". Default: auto-detect berdasarkan jam saat ini. Jika jam diluar shift → error `OUTSIDE_HOURS`
 - `date` (string, optional): Format YYYY-MM-DD. Default: hari ini
+
+**Behavior berdasarkan Auth Source:**
+
+| Scenario                             | JWT (GUI)                           | API Key (ESP32)                     |
+| ------------------------------------ | ----------------------------------- | ----------------------------------- |
+| Tidak ada `shift`                    | Auto-detect dari jam saat ini       | Auto-detect dari jam saat ini       |
+| Tidak ada `date`                     | Gunakan hari ini                    | Gunakan hari ini                    |
+| Diluar jam shift & shift auto-detect | Error `OUTSIDE_HOURS`               | Error `OUTSIDE_HOURS`               |
+| Diluar jam shift tapi shift explicit | ⚠️ Masih dicek jam (possible error) | ⚠️ Masih dicek jam (possible error) |
 
 **Response (Success - HTTP 200):**
 
@@ -571,7 +590,21 @@ Authorization: Bearer <access_token>
 }
 ```
 
-**cURL:**
+**Example untuk ESP32 (API Key - minimal request):**
+
+```bash
+curl -X POST http://localhost:5000/api/attendance/batch \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: sk_xxx" \
+  -d '{
+    "batch": [
+      {"rfid_id": "RFD001001"},
+      {"rfid_id": "RFD001002"}
+    ]
+  }'
+```
+
+**cURL dengan JWT:**
 
 ```bash
 curl -X POST http://localhost:5000/api/attendance/batch \
