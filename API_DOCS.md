@@ -73,19 +73,20 @@ API ini menyediakan endpoint untuk:
     - [17. Get All Classes](#17-get-all-classes)
     - [18. Get Santri by Class](#18-get-santri-by-class)
     - [19. Get All Santri (Optional Filters)](#19-get-all-santri-optional-filters)
-    - [20. Reinitialize Cache (Debug)](#20-reinitialize-cache-debug)
+    - [20. Get RFID List (Third-Party Integration)](#20-get-rfid-list-third-party-integration)
+    - [21. Reinitialize Cache (Debug)](#21-reinitialize-cache-debug)
   - [Santri Import Background Job](#santri-import-background-job)
-    - [21. Download Santri Import Template](#21-download-santri-import-template)
-    - [22. Create Import Job](#22-create-import-job)
-    - [23. Get Import Job Status](#23-get-import-job-status)
-    - [24. Subscribe Import Progress (SSE)](#24-subscribe-import-progress-sse)
-    - [25. Get Import Error Rows](#25-get-import-error-rows)
-    - [26. Export Import Errors (Excel)](#26-export-import-errors-excel)
+    - [22. Download Santri Import Template](#22-download-santri-import-template)
+    - [23. Create Import Job](#23-create-import-job)
+    - [24. Get Import Job Status](#24-get-import-job-status)
+    - [25. Subscribe Import Progress (SSE)](#25-subscribe-import-progress-sse)
+    - [26. Get Import Error Rows](#26-get-import-error-rows)
+    - [27. Export Import Errors (Excel)](#27-export-import-errors-excel)
   - [Administrative](#administrative)
-    - [27. Health Check](#27-health-check)
-    - [28. System Statistics](#28-system-statistics)
-    - [29. Archive Status](#29-archive-status)
-    - [30. Archive History](#30-archive-history)
+    - [28. Health Check](#28-health-check)
+    - [29. System Statistics](#29-system-statistics)
+    - [30. Archive Status](#30-archive-status)
+    - [31. Archive History](#31-archive-history)
 - [Shift Configuration](#shift-configuration)
 - [Response Codes](#response-codes)
 - [Database Schema](#database-schema)
@@ -557,12 +558,12 @@ X-API-Key: sk_xxx
 
 **Behavior berdasarkan Auth Source:**
 
-| Scenario                             | JWT (GUI)                           | API Key (ESP32)                     |
-| ------------------------------------ | ----------------------------------- | ----------------------------------- |
-| Tidak ada `shift`                    | Auto-detect dari jam saat ini       | Auto-detect dari jam saat ini       |
-| Tidak ada `date`                     | Gunakan hari ini                    | Gunakan hari ini                    |
-| Tidak ada `timestamp`                | Gunakan waktu sekarang              | Gunakan waktu sekarang              |
-| Diluar jam shift & shift auto-detect | Error `OUTSIDE_HOURS`               | Error `OUTSIDE_HOURS`               |
+| Scenario                             | JWT (GUI)                        | API Key (ESP32)                  |
+| ------------------------------------ | -------------------------------- | -------------------------------- |
+| Tidak ada `shift`                    | Auto-detect dari jam saat ini    | Auto-detect dari jam saat ini    |
+| Tidak ada `date`                     | Gunakan hari ini                 | Gunakan hari ini                 |
+| Tidak ada `timestamp`                | Gunakan waktu sekarang           | Gunakan waktu sekarang           |
+| Diluar jam shift & shift auto-detect | Error `OUTSIDE_HOURS`            | Error `OUTSIDE_HOURS`            |
 | Diluar jam shift tapi shift explicit | Masih dicek jam (possible error) | Masih dicek jam (possible error) |
 
 **Response (Success - HTTP 200):**
@@ -1431,7 +1432,61 @@ curl -X GET "http://localhost:5000/api/santri?is_active=true&search=ahmad" \
 
 ---
 
-#### 20. Reinitialize Cache (Debug)
+#### 20. Get RFID List (Third-Party Integration)
+
+```
+GET /api/santri/rfid-list
+```
+
+**Deskripsi:** Get daftar semua RFID ID dari santri yang aktif. Endpoint ini dioptimasi untuk device dengan memory terbatas seperti ESP32 yang membutuhkan data minimal.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+atau
+
+```
+X-API-Key: sk_xxx
+```
+
+**Query Parameters:** Tidak ada
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "data": ["DE5DF206", "AB3CF109", "12A4F5B7", "3C8E9D2F"],
+  "count": 4
+}
+```
+
+**Use Cases:**
+
+- **ESP32 RFID Reader**: Device IoT yang memiliki memory terbatas dapat mengambil list RFID sekali saja (saat boot atau restart) dan menyimpannya di LittleFS/SPIFFS.
+- **Offline Validation**: Aplikasi dapat melakukan validasi RFID secara offline tanpa perlu round-trip ke server untuk setiap scan.
+
+**Implementation Notes:**
+
+- Hanya mengembalikan RFID dari santri dengan `is_active = true`
+- Response di-sort berdasarkan RFID ID untuk consistency
+- Data di-chunk 500 rows per query untuk menghindari limit Supabase
+- Minimal response size untuk device dengan memory terbatas
+- Cache-Control di-set ke `no-store` agar data selalu fresh
+
+**cURL:**
+
+```bash
+curl -X GET "http://localhost:5000/api/santri/rfid-list" \
+  -H "X-API-Key: sk_xxx"
+```
+
+---
+
+#### 21. Reinitialize Cache (Debug)
 
 ```
 POST /api/classes/init-cache
@@ -1470,7 +1525,7 @@ curl -X POST http://localhost:5000/api/classes/init-cache \
 
 ### Santri Import Background Job
 
-#### 21. Download Santri Import Template
+#### 22. Download Santri Import Template
 
 ```
 GET /api/santri/template
@@ -1496,7 +1551,7 @@ curl -X GET http://localhost:5000/api/santri/template \
 
 ---
 
-#### 22. Create Import Job
+#### 23. Create Import Job
 
 ```
 POST /api/santri/import-jobs
@@ -1546,7 +1601,7 @@ curl -X POST http://localhost:5000/api/santri/import-jobs \
 
 ---
 
-#### 23. Get Import Job Status
+#### 24. Get Import Job Status
 
 ```
 GET /api/santri/import-jobs/:jobId
@@ -1590,7 +1645,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-#### 24. Subscribe Import Progress (SSE)
+#### 25. Subscribe Import Progress (SSE)
 
 ```
 GET /api/santri/import-jobs/:jobId/progress
@@ -1623,7 +1678,7 @@ Accept: text/event-stream
 
 ---
 
-#### 25. Get Import Error Rows
+#### 26. Get Import Error Rows
 
 ```
 GET /api/santri/import-jobs/:jobId/errors
@@ -1660,7 +1715,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-#### 26. Export Import Errors (Excel)
+#### 27. Export Import Errors (Excel)
 
 ```
 GET /api/santri/import-jobs/:jobId/errors/export
@@ -1688,7 +1743,7 @@ curl -X GET http://localhost:5000/api/santri/import-jobs/<job-id>/errors/export 
 
 ### Administrative
 
-#### 27. Health Check
+#### 28. Health Check
 
 ```
 GET /health
@@ -1713,7 +1768,7 @@ curl -X GET http://localhost:5000/health
 
 ---
 
-#### 28. System Statistics
+#### 29. System Statistics
 
 ```
 GET /api/admin/stats
@@ -1766,7 +1821,7 @@ curl -X GET http://localhost:5000/api/admin/stats \
 
 ---
 
-#### 29. Archive Status
+#### 30. Archive Status
 
 ```
 GET /api/admin/archive/status
@@ -1805,7 +1860,7 @@ curl -X GET http://localhost:5000/api/admin/archive/status \
 
 ---
 
-#### 30. Archive History
+#### 31. Archive History
 
 ```
 GET /api/admin/archive/history

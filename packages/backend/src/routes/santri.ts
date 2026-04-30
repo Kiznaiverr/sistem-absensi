@@ -2,6 +2,7 @@
  * Santri Management Routes
  * POST /api/santri - Add new santri
  * GET /api/santri - Get all santri with filters
+ * GET /api/santri/rfid-list - Get all active RFID IDs (third-party integration)
  * GET /api/santri/template - Download import template
  * POST /api/santri/import-jobs - Queue bulk import santri from Excel
  * GET /api/santri/import-jobs/:jobId - Get import job status
@@ -534,6 +535,32 @@ router.get(
 
       res.send(fileBuffer);
     } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /api/santri/rfid-list
+ * Get list of all active RFID IDs (for third-party integration like ESP32)
+ * This endpoint is optimized for memory-constrained devices
+ * IMPORTANT: Must be defined BEFORE /:santriId route to prevent being matched as parameter
+ */
+router.get(
+  "/rfid-list",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const rfidList = await DatabaseService.getRFIDList();
+
+      res.set("Cache-Control", "private, no-store, max-age=0");
+
+      res.json({
+        success: true,
+        data: rfidList,
+        count: rfidList.length,
+      });
+    } catch (error) {
+      logger.error("Error getting RFID list", error);
       next(error);
     }
   },

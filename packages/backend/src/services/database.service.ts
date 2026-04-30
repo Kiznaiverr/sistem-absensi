@@ -1755,4 +1755,43 @@ export class DatabaseService {
       throw error;
     }
   }
+
+  /**
+   * Get all active RFID IDs (for third-party integration like ESP32)
+   * Returns only RFID from active santri
+   */
+  static async getRFIDList(): Promise<string[]> {
+    try {
+      const pageSize = 500;
+      let offset = 0;
+      const rfidList: string[] = [];
+
+      while (true) {
+        const { data, error } = await supabaseClient
+          .from("santri")
+          .select("rfid_id")
+          .eq("is_active", true)
+          .order("rfid_id", { ascending: true })
+          .range(offset, offset + pageSize - 1);
+
+        if (error) throw error;
+
+        const pageData = data || [];
+        rfidList.push(
+          ...pageData.map((row: { rfid_id: string }) => row.rfid_id),
+        );
+
+        if (pageData.length < pageSize) {
+          break;
+        }
+
+        offset += pageSize;
+      }
+
+      return rfidList;
+    } catch (error) {
+      logger.error("Failed to get RFID list", error);
+      throw error;
+    }
+  }
 }
