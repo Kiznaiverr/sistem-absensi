@@ -566,7 +566,15 @@ X-API-Key: sk_xxx
 | Diluar jam shift & shift auto-detect | Error `OUTSIDE_HOURS`            | Error `OUTSIDE_HOURS`            |
 | Diluar jam shift tapi shift explicit | Masih dicek jam (possible error) | Masih dicek jam (possible error) |
 
-**Response (Success - HTTP 200):**
+**Query Parameters:**
+
+- `embedded` (string, optional): Set ke `"true"` untuk minimal response format. Default: full response
+  - Gunakan untuk device dengan memory terbatas (e.g., ESP32)
+  - Response hanya berisi RFID list dan error codes (tanpa detail santri)
+
+**Response Format:**
+
+**1. Full Response (Default - HTTP 200):**
 
 ```json
 {
@@ -593,7 +601,54 @@ X-API-Key: sk_xxx
 }
 ```
 
-**Example untuk ESP32 (API Key - minimal request):**
+**2. Minimal Response (embedded=true - HTTP 200):**
+
+Dioptimasi untuk device dengan memory terbatas, hanya berisi RFID IDs dan error codes:
+
+```json
+{
+  "success": true,
+  "data": {
+    "success_rfids": ["RFD001001", "RFD001003"],
+    "errors": [
+      {
+        "rfid": "RFD001002",
+        "code": "ALREADY_CHECKED_SIANG"
+      }
+    ]
+  }
+}
+```
+
+**Response (Success - HTTP 200):** (lihat Response Format di atas)
+
+**Example untuk ESP32 (API Key - minimal request + embedded response):**
+
+```bash
+curl -X POST "http://localhost:5000/api/attendance/batch?embedded=true" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: sk_xxx" \
+  -d '{
+    "batch": [
+      {"rfid_id": "RFD001001"},
+      {"rfid_id": "RFD001002"}
+    ]
+  }'
+```
+
+Response (Minimal):
+
+```json
+{
+  "success": true,
+  "data": {
+    "success_rfids": ["RFD001001"],
+    "errors": [{ "rfid": "RFD001002", "code": "ALREADY_CHECKED_SIANG" }]
+  }
+}
+```
+
+**Example untuk ESP32 (API Key - full response):**
 
 ```bash
 curl -X POST http://localhost:5000/api/attendance/batch \

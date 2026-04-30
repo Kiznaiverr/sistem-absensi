@@ -172,6 +172,29 @@ router.post(
        */
       const result = await AttendanceService.processBatch(body);
 
+      /**
+       * Check for embedded mode (minimal response)
+       * Query param: ?embedded=true
+       */
+      const embedded = req.query.embedded === "true";
+
+      if (embedded) {
+        // Minimal response format for memory-constrained devices (e.g., ESP32)
+        const minimalResult = {
+          success_rfids: result.success.map((item: any) => item.rfid_id),
+          errors: result.errors.map((item: any) => ({
+            rfid: item.rfid_id,
+            code: item.error_code,
+          })),
+        };
+
+        return res.json({
+          success: true,
+          data: minimalResult,
+        });
+      }
+
+      // Full response format (default)
       res.json({
         success: true,
         data: result,
