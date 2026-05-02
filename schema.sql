@@ -126,6 +126,24 @@ CREATE INDEX idx_attendance_error_logs_error_code ON attendance_error_logs(error
 CREATE INDEX idx_attendance_error_logs_rfid_id ON attendance_error_logs(rfid_id);
 CREATE INDEX idx_attendance_error_logs_created_at ON attendance_error_logs(created_at DESC);
 
+-- ESP32 Error Logs
+CREATE TABLE IF NOT EXISTS esp32_error_logs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  device_id VARCHAR(100) NOT NULL,
+  error_code VARCHAR(50) NOT NULL,
+  error_message TEXT NOT NULL,
+  metadata JSONB,
+  timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+  request_date DATE NOT NULL,
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '7 days'),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_esp32_error_logs_device_id ON esp32_error_logs(device_id);
+CREATE INDEX idx_esp32_error_logs_request_date ON esp32_error_logs(request_date);
+CREATE INDEX idx_esp32_error_logs_expires_at ON esp32_error_logs(expires_at);
+CREATE INDEX idx_esp32_error_logs_created_at ON esp32_error_logs(created_at DESC);
+
 -- Santri import background jobs
 CREATE TABLE IF NOT EXISTS santri_import_jobs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

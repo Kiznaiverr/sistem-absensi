@@ -10,6 +10,7 @@ API ini menyediakan endpoint untuk:
 - Monitoring attendance harian dan bulanan
 - Export data attendance dalam format JSON matrix untuk preview dan processing lanjutan
 - Management data santri dan kelas dengan caching
+- Pencatatan error dari device ESP32 dengan filtering per device_id
 - Administrative monitoring dan system stats
 
 **Base URL:** `http://localhost:5000`
@@ -69,24 +70,27 @@ API ini menyediakan endpoint untuk:
     - [14. Delete All Errors](#14-delete-all-errors)
     - [15. Mark Error as Resolved](#15-mark-error-as-resolved)
     - [16. Manual Cleanup](#16-manual-cleanup)
+  - [ESP32 Error Reporting](#esp32-error-reporting)
+    - [17. Submit ESP32 Error](#17-submit-esp32-error)
+    - [18. Get ESP32 Errors](#18-get-esp32-errors)
   - [Classes and Santri Management](#classes-and-santri-management)
-    - [17. Get All Classes](#17-get-all-classes)
-    - [18. Get Santri by Class](#18-get-santri-by-class)
-    - [19. Get All Santri (Optional Filters)](#19-get-all-santri-optional-filters)
-    - [20. Get RFID List (Third-Party Integration)](#20-get-rfid-list-third-party-integration)
-    - [21. Reinitialize Cache (Debug)](#21-reinitialize-cache-debug)
+    - [19. Get All Classes](#19-get-all-classes)
+    - [20. Get Santri by Class](#20-get-santri-by-class)
+    - [21. Get All Santri (Optional Filters)](#21-get-all-santri-optional-filters)
+    - [22. Get RFID List (Third-Party Integration)](#22-get-rfid-list-third-party-integration)
+    - [23. Reinitialize Cache (Debug)](#23-reinitialize-cache-debug)
   - [Santri Import Background Job](#santri-import-background-job)
-    - [22. Download Santri Import Template](#22-download-santri-import-template)
-    - [23. Create Import Job](#23-create-import-job)
-    - [24. Get Import Job Status](#24-get-import-job-status)
-    - [25. Subscribe Import Progress (SSE)](#25-subscribe-import-progress-sse)
-    - [26. Get Import Error Rows](#26-get-import-error-rows)
-    - [27. Export Import Errors (Excel)](#27-export-import-errors-excel)
+    - [24. Download Santri Import Template](#24-download-santri-import-template)
+    - [25. Create Import Job](#25-create-import-job)
+    - [26. Get Import Job Status](#26-get-import-job-status)
+    - [27. Subscribe Import Progress (SSE)](#27-subscribe-import-progress-sse)
+    - [28. Get Import Error Rows](#28-get-import-error-rows)
+    - [29. Export Import Errors (Excel)](#29-export-import-errors-excel)
   - [Administrative](#administrative)
-    - [28. Health Check](#28-health-check)
-    - [29. System Statistics](#29-system-statistics)
-    - [30. Archive Status](#30-archive-status)
-    - [31. Archive History](#31-archive-history)
+    - [30. Health Check](#30-health-check)
+    - [31. System Statistics](#31-system-statistics)
+    - [32. Archive Status](#32-archive-status)
+    - [33. Archive History](#33-archive-history)
 - [Shift Configuration](#shift-configuration)
 - [Response Codes](#response-codes)
 - [Database Schema](#database-schema)
@@ -1319,9 +1323,151 @@ curl -X POST "http://localhost:5000/api/attendance/errors/cleanup" \
 
 ---
 
+### ESP32 Error Reporting
+
+Endpoint untuk menerima dan membaca error dari device ESP32. Submission error wajib memakai API Key, sedangkan pembacaan log mendukung JWT atau API Key. Data dipisah dari attendance errors agar filtering per device tetap jelas.
+
+ESP32 error logs memiliki retensi 7 hari. Cleanup berjalan otomatis setiap minggu untuk menghapus log yang sudah melewati masa simpan.
+
+#### 17. Submit ESP32 Error
+
+```
+POST /api/error/esp32
+```
+
+**Deskripsi:** Submit error dari ESP32 device. Endpoint ini khusus untuk device dan wajib memakai API key.
+
+**Headers:**
+
+```
+X-API-Key: sk_xxx
+Content-Type: application/json
+```
+
+**Request Body:**
+
+```json
+{
+  "device_id": "esp32-lab-01",
+  "error_code": "RFID_READ_FAILED",
+  "error_message": "Failed to read RFID module",
+  "timestamp": 1746172800000,
+  "metadata": {
+    "uptime_ms": 123456,
+    "wifi_rssi": -61,
+    "free_heap": 82432
+  }
+}
+```
+
+**Field Notes:**
+
+- `device_id` wajib diisi dan dipakai untuk filter log per device
+- `error_code` dan `error_message` wajib diisi
+- `timestamp` opsional, format unix milliseconds
+- `metadata` opsional, object bebas untuk data tambahan dari ESP32
+
+**Response (HTTP 201):**
+
+```json
+{
+  "success": true,
+  "message": "ESP32 error logged successfully"
+}
+```
+
+**cURL:**
+
+```bash
+curl -X POST "http://localhost:5000/api/error/esp32" \
+  -H "X-API-Key: sk_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "device_id": "esp32-lab-01",
+    "error_code": "RFID_READ_FAILED",
+    "error_message": "Failed to read RFID module"
+  }'
+```
+
+---
+
+#### 18. Get ESP32 Errors
+
+```
+GET /api/error/esp32
+```
+
+**Deskripsi:** Get daftar error ESP32 dengan optional filtering. Memerlukan JWT atau API key.
+
+**Headers:**
+
+```
+Authorization: Bearer <access_token>
+```
+
+atau
+
+```
+X-API-Key: sk_xxx
+```
+
+**Query Parameters:**
+
+- `limit` (number, optional): Max records per page (default: 50, max: 500)
+- `offset` (number, optional): Pagination offset (default: 0)
+- `device_id` (string, optional): Filter by device_id tertentu. Gunakan `all` untuk semua device.
+- `error_code` (string, optional): Filter by error code
+- `date` (string, optional): Filter by date (format: YYYY-MM-DD)
+- `request_date` (string, optional): Alias lama untuk filter tanggal
+
+**Response (HTTP 200):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "data": [
+      {
+        "id": "uuid-001",
+        "device_id": "esp32-lab-01",
+        "error_code": "RFID_READ_FAILED",
+        "error_message": "Failed to read RFID module",
+        "metadata": {
+          "uptime_ms": 123456,
+          "wifi_rssi": -61
+        },
+        "timestamp": "2026-05-02T10:15:45.000Z",
+        "request_date": "2026-05-02",
+        "created_at": "2026-05-02T10:15:45.000Z"
+      }
+    ],
+    "count": 1,
+    "total": 12
+  }
+}
+```
+
+**Catatan:** Log yang disimpan akan memiliki `expires_at` dan dihapus otomatis setelah 7 hari.
+
+**cURL - Semua device:**
+
+```bash
+curl -X GET "http://localhost:5000/api/error/esp32?device_id=all" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**cURL - Filter device tertentu:**
+
+```bash
+curl -X GET "http://localhost:5000/api/error/esp32?device_id=esp32-lab-01" \
+  -H "X-API-Key: sk_xxx"
+```
+
+---
+
 ### Classes and Santri Management
 
-#### 17. Get All Classes
+#### 19. Get All Classes
 
 ```
 GET /api/classes
@@ -1375,7 +1521,7 @@ curl -X GET http://localhost:5000/api/classes \
 
 ---
 
-#### 18. Get Santri by Class
+#### 20. Get Santri by Class
 
 ```
 GET /api/classes/:classId/santri
@@ -1428,7 +1574,7 @@ curl -X GET http://localhost:5000/api/classes/uuid-smp1/santri \
 
 ---
 
-#### 19. Get All Santri (Optional Filters)
+#### 21. Get All Santri (Optional Filters)
 
 ```
 GET /api/santri
@@ -1487,7 +1633,7 @@ curl -X GET "http://localhost:5000/api/santri?is_active=true&search=ahmad" \
 
 ---
 
-#### 20. Get RFID List (Third-Party Integration)
+#### 22. Get RFID List (Third-Party Integration)
 
 ```
 GET /api/santri/rfid-list
@@ -1541,7 +1687,7 @@ curl -X GET "http://localhost:5000/api/santri/rfid-list" \
 
 ---
 
-#### 21. Reinitialize Cache (Debug)
+#### 23. Reinitialize Cache (Debug)
 
 ```
 POST /api/classes/init-cache
@@ -1580,7 +1726,7 @@ curl -X POST http://localhost:5000/api/classes/init-cache \
 
 ### Santri Import Background Job
 
-#### 22. Download Santri Import Template
+#### 24. Download Santri Import Template
 
 ```
 GET /api/santri/template
@@ -1606,7 +1752,7 @@ curl -X GET http://localhost:5000/api/santri/template \
 
 ---
 
-#### 23. Create Import Job
+#### 25. Create Import Job
 
 ```
 POST /api/santri/import-jobs
@@ -1656,7 +1802,7 @@ curl -X POST http://localhost:5000/api/santri/import-jobs \
 
 ---
 
-#### 24. Get Import Job Status
+#### 26. Get Import Job Status
 
 ```
 GET /api/santri/import-jobs/:jobId
@@ -1700,7 +1846,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-#### 25. Subscribe Import Progress (SSE)
+#### 27. Subscribe Import Progress (SSE)
 
 ```
 GET /api/santri/import-jobs/:jobId/progress
@@ -1733,7 +1879,7 @@ Accept: text/event-stream
 
 ---
 
-#### 26. Get Import Error Rows
+#### 28. Get Import Error Rows
 
 ```
 GET /api/santri/import-jobs/:jobId/errors
@@ -1770,7 +1916,7 @@ Authorization: Bearer <access_token>
 
 ---
 
-#### 27. Export Import Errors (Excel)
+#### 29. Export Import Errors (Excel)
 
 ```
 GET /api/santri/import-jobs/:jobId/errors/export
@@ -1798,7 +1944,7 @@ curl -X GET http://localhost:5000/api/santri/import-jobs/<job-id>/errors/export 
 
 ### Administrative
 
-#### 28. Health Check
+#### 30. Health Check
 
 ```
 GET /health
@@ -1823,7 +1969,7 @@ curl -X GET http://localhost:5000/health
 
 ---
 
-#### 29. System Statistics
+#### 31. System Statistics
 
 ```
 GET /api/admin/stats
@@ -1876,7 +2022,7 @@ curl -X GET http://localhost:5000/api/admin/stats \
 
 ---
 
-#### 30. Archive Status
+#### 32. Archive Status
 
 ```
 GET /api/admin/archive/status
@@ -1915,7 +2061,7 @@ curl -X GET http://localhost:5000/api/admin/archive/status \
 
 ---
 
-#### 31. Archive History
+#### 33. Archive History
 
 ```
 GET /api/admin/archive/history
@@ -2057,6 +2203,20 @@ created_at: timestamp
 updated_at: timestamp
 ```
 
+### ESP32 Error Logs
+
+```
+id: UUID (primary key)
+device_id: string
+error_code: string
+error_message: string
+metadata: jsonb (optional)
+timestamp: timestamp
+request_date: date
+expires_at: timestamp (default: now + 7 days)
+created_at: timestamp
+```
+
 ---
 
 ## Caching Strategy
@@ -2137,6 +2297,12 @@ These are intentional duplicate attempts and not system errors, so not logged.
 - **Retention:** 24 hours
 - **Auto-delete:** Every hour (runs at minute 0)
 - **Manual cleanup:** `POST /api/attendance/errors/cleanup`
+
+### ESP32 Error Cleanup
+
+- **Retention:** 7 days
+- **Auto-delete:** Every Sunday at 00:00
+- **Filter:** `GET /api/error/esp32?date=YYYY-MM-DD` or `request_date=YYYY-MM-DD`
 
 ### Shift-End Notification
 

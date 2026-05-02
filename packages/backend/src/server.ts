@@ -6,6 +6,7 @@ import { scheduleArchiveJob } from "./jobs/archive.job.js";
 import { scheduleStorageExportJob } from "./jobs/storage-export.job.js";
 import { scheduleShiftEndJobs } from "./jobs/shift-end-summary.job.js";
 import { scheduleErrorCleanupJob } from "./jobs/error-cleanup.job.js";
+import { scheduleEsp32ErrorCleanupJob } from "./jobs/esp32-error-cleanup.job.js";
 import { startSantriImportWorker } from "./jobs/santri-import.job.js";
 
 const logger = createLogger("Server");
@@ -38,6 +39,9 @@ async function startServer() {
 
     // Initialize error log cleanup job scheduler
     scheduleErrorCleanupJob();
+
+    // Initialize ESP32 error log cleanup job scheduler
+    scheduleEsp32ErrorCleanupJob();
 
     // Initialize santri import background worker
     startSantriImportWorker();
