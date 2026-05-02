@@ -44,9 +44,46 @@ export class Esp32ErrorService {
         request_date: requestDate,
         expires_at: expiresAt.toISOString(),
       });
-
       if (error) {
-        logger.error("Failed to log ESP32 error", { error, errorData });
+        // Fallback: some deployments may not have DB migration applied yet
+        // that adds `expires_at`. If Supabase/PostgREST reports missing
+        // column, retry without `expires_at` to remain backwards compatible.
+        logger.warn("Initial insert failed for esp32_error_logs", { error });
+
+        const missingExpires =
+          error?.code === "PGRST204" ||
+          (typeof error?.message === "string" &&
+            error.message.includes("Could not find the 'expires_at' column"));
+
+        if (missingExpires) {
+          try {
+            const { error: retryError } = await supabaseClient
+              .from("esp32_error_logs")
+              .insert({
+                device_id: errorData.device_id,
+                error_code: errorData.error_code,
+                error_message: errorData.error_message,
+                metadata: errorData.metadata || null,
+                timestamp: new Date(timestamp).toISOString(),
+                request_date: requestDate,
+              });
+
+            if (retryError) {
+              logger.error("Retry insert without expires_at failed", {
+                retryError,
+                errorData,
+              });
+            } else {
+              logger.info("Logged ESP32 error without expires_at", {
+                errorData,
+              });
+            }
+          } catch (retryErr) {
+            logger.error("Retry insert without expires_at threw", retryErr);
+          }
+        } else {
+          logger.error("Failed to log ESP32 error", { error, errorData });
+        }
       }
     } catch (err) {
       logger.error("Error logging ESP32 error", err);

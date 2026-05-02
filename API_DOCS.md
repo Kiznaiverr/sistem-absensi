@@ -1367,6 +1367,8 @@ Content-Type: application/json
 - `timestamp` opsional, format unix milliseconds
 - `metadata` opsional, object bebas untuk data tambahan dari ESP32
 
+**Catatan Operasional:** Jika server mengembalikan error terkait kolom `expires_at` saat submit, itu berarti database belum menjalankan migration/schema update. Server akan mencoba ulang memasukkan log tanpa `expires_at` untuk kompatibilitas, tetapi disarankan menjalankan `schema.sql` atau migrasi yang sesuai supaya fitur TTL (hapus otomatis 7 hari) berfungsi.
+
 **Response (HTTP 201):**
 
 ```json
