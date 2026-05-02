@@ -384,33 +384,41 @@ export class AttendanceService {
         }
 
         // Record attendance to database
-        try {
-          await DatabaseService.recordAttendance(
-            cachedSantri.santri_id,
-            cachedSantri.class_id,
-            today,
+        const recordResult = await DatabaseService.recordAttendance(
+          cachedSantri.santri_id,
+          cachedSantri.class_id,
+          today,
+          shift,
+        );
+
+        if (!recordResult) {
+          // DB indicated duplicate (already checked) via special return
+          const errorCode =
+            shift === "siang"
+              ? ERROR_CODES.ALREADY_CHECKED_SIANG
+              : ERROR_CODES.ALREADY_CHECKED_MALAM;
+
+          const checkedInMap =
+            shift === "siang" ? attendanceToday.siang : attendanceToday.malam;
+          const checkedTimestamp = checkedInMap.get(rfid_id) || timestamp;
+          const checkedTime = formatTime(new Date(checkedTimestamp));
+
+          response.errors.push({
+            rfid_id,
             shift,
-          );
-          logger.debug("Attendance recorded to database", {
-            rfid_id,
-            santri_id: cachedSantri.santri_id,
+            error: ERROR_MESSAGES[errorCode],
+            error_code: errorCode,
+            already_checked_at: checkedTime,
           });
-        } catch (dbError) {
-          const errorMessage =
-            dbError instanceof Error ? dbError.message : String(dbError);
-          const errorStack =
-            dbError instanceof Error ? dbError.stack : undefined;
-          logger.error("Database recordAttendance failed", {
-            rfid_id,
-            error_message: errorMessage,
-            error_stack: errorStack,
-            error_type:
-              dbError instanceof Error
-                ? dbError.constructor.name
-                : typeof dbError,
-          });
-          throw dbError;
+
+          // Note: ALREADY_CHECKED errors are NOT logged per existing behavior
+          continue;
         }
+
+        logger.debug("Attendance recorded to database", {
+          rfid_id,
+          santri_id: cachedSantri.santri_id,
+        });
 
         processedInBatch.add(rfid_id);
 

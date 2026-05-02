@@ -164,7 +164,7 @@ export class DatabaseService {
     classId: string,
     date: string,
     shift: Shift,
-  ): Promise<AttendanceLog> {
+  ): Promise<AttendanceLog | null> {
     try {
       const { data, error } = await supabaseClient
         .from("attendance_logs")
@@ -181,6 +181,34 @@ export class DatabaseService {
       if (error) throw error;
       return data;
     } catch (error) {
+      // Detect duplicate key violation specifically for attendance unique constraint
+      try {
+        const dbErr: any = error;
+        const isDuplicate =
+          dbErr?.code === "23505" &&
+          ((typeof dbErr?.message === "string" &&
+            dbErr.message.includes(
+              "attendance_logs_santri_id_date_shift_key",
+            )) ||
+            (typeof dbErr?.details === "string" &&
+              dbErr.details.includes("(santri_id, date, shift)")));
+
+        if (isDuplicate) {
+          logger.info(
+            "Attendance insert duplicate detected (already checked)",
+            {
+              santriId,
+              date,
+              shift,
+            },
+          );
+          // Return null to indicate already-checked instead of throwing
+          return null;
+        }
+      } catch (e) {
+        // ignore detection errors and fall through to rethrow
+      }
+
       logger.error("Failed to record attendance", {
         santriId,
         classId,
