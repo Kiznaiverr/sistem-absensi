@@ -5,7 +5,7 @@
 
 import { supabaseClient } from "../config/database.js";
 import { createLogger } from "../utils/logger.js";
-import { getCurrentDateString } from "../utils/time.js";
+import { formatDateTime, getCurrentDateString } from "../utils/time.js";
 
 const logger = createLogger("Esp32ErrorService");
 
@@ -132,7 +132,12 @@ export class Esp32ErrorService {
         .select("*", { count: "exact", head: true });
 
       return {
-        data: data || [],
+        data: (data || []).map((log) => ({
+          ...log,
+          timestamp: formatDateTime(new Date(log.timestamp)),
+          created_at: formatDateTime(new Date(log.created_at)),
+          expires_at: formatDateTime(new Date(log.expires_at)),
+        })),
         count: count || 0,
         total: totalCount || 0,
       };

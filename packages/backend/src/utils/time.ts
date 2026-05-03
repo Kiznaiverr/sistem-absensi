@@ -92,6 +92,14 @@ export function formatTime(date: Date): string {
 }
 
 /**
+ * Format date and time to YYYY-MM-DD HH:mm:ss (in Jakarta timezone)
+ */
+export function formatDateTime(date: Date): string {
+  const jakartaTime = utcToZonedTime(date, TIMEZONE);
+  return format(jakartaTime, "yyyy-MM-dd HH:mm:ss");
+}
+
+/**
  * Get current month and year
  */
 export function getCurrentMonthYear(): { month: number; year: number } {
