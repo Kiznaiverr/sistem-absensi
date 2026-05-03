@@ -100,6 +100,14 @@ export function formatDateTime(date: Date): string {
 }
 
 /**
+ * Format date and time to ISO-like string with timezone offset (Asia/Jakarta)
+ */
+export function formatDateTimeIsoJakarta(date: Date): string {
+  const jakartaTime = utcToZonedTime(date, TIMEZONE);
+  return format(jakartaTime, "yyyy-MM-dd'T'HH:mm:ssXXX");
+}
+
+/**
  * Get current month and year
  */
 export function getCurrentMonthYear(): { month: number; year: number } {

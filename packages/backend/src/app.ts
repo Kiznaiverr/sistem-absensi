@@ -20,6 +20,7 @@ import santriRoutes from "./routes/santri.js";
 import authRoutes from "./routes/auth.js";
 import { validateToken } from "./middleware/auth.middleware.js";
 import { auditLoggingMiddleware } from "./middleware/audit-logging.middleware.js";
+import { formatDateTimeIsoJakarta } from "./utils/time.js";
 
 const logger = createLogger("App");
 
@@ -168,6 +169,26 @@ app.use(auditLoggingMiddleware);
  */
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok" });
+});
+
+/**
+ * Public time synchronization endpoint
+ * Returns UTC epoch and issued time for device clock sync
+ */
+app.get("/time-sync", (_req: Request, res: Response) => {
+  const now = new Date();
+  const epochUtc = Math.floor(now.getTime() / 1000);
+  const issuedAtJakarta = formatDateTimeIsoJakarta(now);
+
+  res.json({
+    success: true,
+    data: {
+      epoch_utc: epochUtc,
+      timezone: "Asia/Jakarta",
+      issued_at: issuedAtJakarta,
+      max_skew_seconds: 30,
+    },
+  });
 });
 
 /**
