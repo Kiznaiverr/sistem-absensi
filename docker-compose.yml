@@ -5,13 +5,9 @@ services:
       dockerfile: Dockerfile
     container_name: absensi-app
 
-    # Default: local development (ports exposed to host)
-    ports:
-      - "5000:5000"
-
-    # For VPS with NAT: replace 'ports:' above with 'expose:' below
-    # expose:
-    #   - "5000"
+    # VPS with NAT: expose internal port (akses via Cloudflare Tunnel)
+    expose:
+      - "5000"
 
     env_file:
       - .env
@@ -42,9 +38,9 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: absensi-cloudflared
-    command: tunnel run ${CLOUDFLARE_TUNNEL_ID}
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
     environment:
-      - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TOKEN}
+      - TUNNEL_TOKEN=${CLOUDFLARE_TOKEN}
     restart: unless-stopped
     profiles:
       - vpn
