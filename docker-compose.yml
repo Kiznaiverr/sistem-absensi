@@ -40,7 +40,7 @@ services:
     container_name: absensi-cloudflared
     command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
     environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TOKEN}
+      - TUNNEL_TOKEN=${CLOUDFLARED_TOKEN}
     restart: unless-stopped
     profiles:
       - vpn
