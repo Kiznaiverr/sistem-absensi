@@ -32,5 +32,10 @@
   },
   "dependencies": {
     "multer": "^2.1.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }
